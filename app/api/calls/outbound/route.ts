@@ -10,6 +10,16 @@ import { getSavedAgentVersion } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Reads the variable names out of Sarvam's 422 error, e.g.
+ * "Agent variables '{'language', 'preferred_language'}' not found in agent variables of app ..."
+ */
+function parseUnknownAgentVariables(errorText: string): string[] {
+  const match = errorText.match(/Agent variables? '?\{([^}]*)\}'? not found/i);
+  if (!match) return [];
+  return Array.from(match[1].matchAll(/'([A-Za-z0-9_]+)'/g), (m) => m[1]);
+}
+
 interface OutboundRequestBody {
   profile: ParentProfile;
   config?: VoiceHealthConfig;
@@ -238,8 +248,6 @@ export async function POST(req: NextRequest) {
             user_id: userId,
             user_context: effectiveUserContext,
             number_of_calls: callCountStr,
-            preferred_language: validLanguage,
-            language: validLanguage,
           },
           app_overrides: {
             initial_language_name: validLanguage,
@@ -263,14 +271,34 @@ export async function POST(req: NextRequest) {
         },
       };
 
-      const sarvamRes = await fetch(sarvamUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": apiKey.trim(),
-        },
-        body: JSON.stringify(sarvamPayload),
-      });
+      const sendOutbound = () =>
+        fetch(sarvamUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey.trim(),
+          },
+          body: JSON.stringify(sarvamPayload),
+        });
+
+      let sarvamRes = await sendOutbound();
+
+      // Agent versions define different variables, and Sarvam rejects unknown ones.
+      // Drop the variables it names and retry once.
+      let droppedVariables: string[] = [];
+      if (sarvamRes.status === 422) {
+        const errorText = await sarvamRes.clone().text();
+        droppedVariables = parseUnknownAgentVariables(errorText);
+        if (droppedVariables.length > 0) {
+          for (const name of droppedVariables) {
+            delete sarvamPayload.app_config.agent_variables[name];
+          }
+          console.warn(
+            `Agent version ${appVersion} does not define ${droppedVariables.join(", ")}; retrying without them.`,
+          );
+          sarvamRes = await sendOutbound();
+        }
+      }
 
       if (!sarvamRes.ok) {
         const errorText = await sarvamRes.text();
