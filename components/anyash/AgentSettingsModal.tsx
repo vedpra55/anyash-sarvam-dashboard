@@ -21,11 +21,12 @@ export function AgentSettingsModal({ isOpen, onClose }: AgentSettingsModalProps)
     setErrorMsg("");
     setSavedMsg("");
     setIsLoading(true);
-    fetch("/api/settings")
+    fetch("/api/settings", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         setAgentVersion(data.agent_version ? String(data.agent_version) : "");
         setSource(data.source || "none");
+        if (data.error) setErrorMsg(data.error);
       })
       .catch(() => setErrorMsg("Failed to load settings"))
       .finally(() => setIsLoading(false));
