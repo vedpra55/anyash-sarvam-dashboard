@@ -519,7 +519,11 @@ export default function CallsPage() {
                         {/* 1. Parent Name & Phone Number */}
                         <td className="py-3.5 px-6">
                           <div className="flex items-center gap-2.5">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                isConnected ? "bg-emerald-500" : isBusy ? "bg-amber-400" : "bg-rose-500"
+                              }`}
+                            />
                             <div>
                               <div className="font-medium text-white group-hover:text-[#FEE5A5] transition-colors">
                                 {call.parent_name || "Parent"}

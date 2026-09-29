@@ -16,5 +16,9 @@ export function getServiceSupabase() {
     "";
   return createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false },
+    // Always read fresh rows: bypass Next.js's fetch cache.
+    global: {
+      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+    },
   });
 }

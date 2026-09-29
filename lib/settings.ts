@@ -1,22 +1,12 @@
-import { createClient } from "@supabase/supabase-js";
+import { getServiceSupabase } from "./supabase";
 
 export const AGENT_VERSION_KEY = "sarvam_app_version";
 
-// Settings must always be read fresh: bypass Next.js's fetch cache.
 function getSettingsClient() {
-  const url =
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://vsljapxjdhqqaqvurajp.supabase.co";
-  const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET || "";
-  if (!serviceKey) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SECRET) {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
   }
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false },
-    global: {
-      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
-    },
-  });
+  return getServiceSupabase();
 }
 
 /**

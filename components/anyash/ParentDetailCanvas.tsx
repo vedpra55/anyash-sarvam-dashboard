@@ -12,19 +12,17 @@ import {
   Sun,
   FileText,
   Clock,
-  CheckCircle2,
-  AlertCircle,
-  Volume2,
   Trash2,
   Sparkles,
   ChevronRight,
-  ExternalLink,
 } from "lucide-react";
 import { ParentItem } from "./ParentsListColumn";
 import { CallDetailDrawer } from "./CallDetailDrawer";
+import { MemoryPanel } from "./MemoryPanel";
+import { StatusLabel, callStatusMeta, humanize, formatDuration } from "./detail-ui";
 import { SarvamCallRecord } from "@/lib/sarvam";
 
-export type DetailSubTab = "overview" | "calls" | "health" | "details" | "edit";
+export type DetailSubTab = "overview" | "calls" | "health" | "memory" | "details";
 
 interface ParentDetailCanvasProps {
   parent: ParentItem | null;
@@ -72,13 +70,6 @@ export function ParentDetailCanvas({
   const relationship = parent.facts?.relationship || "Parent";
   const phone = parent.phone_number || "";
   const child = parent.child_name || parent.facts?.family_member || "Family";
-
-  // Ensure working prompt memory dynamically reflects real parent & child names, with strictly 2 lines by default
-  const rawContext = parent.current_user_context || "";
-  const workingPromptMemory =
-    !rawContext || rawContext.startsWith("TODAY: Initial")
-      ? `TODAY: Initial Profile Created | CALL COUNT: ${parent.number_of_calls || 1}\nBASELINE: ${parent.parent_name} | Child: ${child} (${relationship})`
-      : rawContext;
 
   // Last call data (from live Sarvam calls)
   const lastCall = parent.latestCall;
@@ -234,8 +225,8 @@ export function ParentDetailCanvas({
       </div>
 
       {/* 2. Sub-Navigation Tabs */}
-      <div className="flex items-center gap-8 pt-4 pb-6 border-b border-[#1C1F24]/50">
-        {(["overview", "calls", "health", "details", "edit"] as DetailSubTab[]).map(
+      <div className="flex items-center gap-8 pt-5 border-b border-white/[0.06]">
+        {(["overview", "calls", "health", "memory", "details"] as DetailSubTab[]).map(
           (tab) => {
             const isActive = activeTab === tab;
             const label = tab === "calls" && parent.calls && parent.calls.length > 0
@@ -244,20 +235,14 @@ export function ParentDetailCanvas({
             return (
               <button
                 key={tab}
-                onClick={() => {
-                  if (tab === "edit") {
-                    onEditClick(parent);
-                  } else {
-                    setActiveTab(tab);
-                  }
-                }}
-                className={`relative pb-2 text-sm font-medium transition-colors ${
+                onClick={() => setActiveTab(tab)}
+                className={`relative pb-3 text-sm font-medium transition-colors ${
                   isActive ? "text-white" : "text-[#717680] hover:text-[#D1D5DB]"
                 }`}
               >
                 <span>{label}</span>
                 {isActive && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-white rounded-full" />
+                  <span className="absolute -bottom-px left-0 right-0 h-px bg-white" />
                 )}
               </button>
             );
@@ -439,101 +424,51 @@ export function ParentDetailCanvas({
 
       {/* Calls Tab */}
       {activeTab === "calls" && (
-        <div className="pt-6 space-y-3 max-w-4xl">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Check-in Calls History</h3>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                Real-time conversations recorded and analyzed by Sarvam AI. Click any row to inspect dialogue and output variables.
-              </p>
-            </div>
-            {parent.calls && parent.calls.length > 0 && (
-              <span className="text-xs font-mono text-zinc-400 bg-white/[0.04] px-2.5 py-1 rounded-full border border-white/[0.06]">
-                {parent.calls.length} calls recorded
-              </span>
-            )}
-          </div>
-
+        <div className="pt-6 max-w-4xl">
           {(!parent.calls || parent.calls.length === 0) ? (
-            <div className="p-12 bg-[#141619] rounded-2xl border border-[#202328] text-center space-y-3">
-              <Calendar className="w-8 h-8 text-zinc-600 mx-auto" />
-              <div className="text-sm font-medium text-zinc-300">No calls recorded yet for {parent.parent_name}</div>
-              <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                Calls initiated to {parent.phone_number} will automatically sync here from Sarvam AI with full transcripts and clinical variables.
+            <div className="py-10">
+              <p className="text-[14px] text-zinc-300">No calls with {parent.parent_name} yet.</p>
+              <p className="text-[13px] text-zinc-500 mt-1">
+                Calls to {parent.phone_number} show up here with their recording, transcript and Anya&apos;s review.
               </p>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <ul className="divide-y divide-white/[0.05]">
               {parent.calls.map((call: any, idx: number) => {
-                const isConnected = call.call_status === "connected" || call.call_status === "completed";
-                const hasFollowUp = call.follow_up_needed === "yes";
-
+                const status = callStatusMeta(call.call_status);
+                const needsFollowUp = call.follow_up_needed === "yes";
+                const when = new Date(call.created_at);
                 return (
-                  <div
-                    key={call.id || idx}
-                    onClick={() => setSelectedCallForDrawer(call)}
-                    className="group bg-[#141619] hover:bg-[#181A1F] rounded-2xl border border-[#202328] hover:border-[#2F3440] p-6 flex items-start justify-between gap-5 transition-all cursor-pointer shadow-sm hover:shadow-md"
-                  >
-                    <div className="space-y-2.5 min-w-0 flex-1">
-                      {/* Top Row: Date, Duration, Status, Outcome Tag */}
-                      <div className="flex items-center gap-2.5 flex-wrap">
-                        <span className="text-xs font-semibold text-white group-hover:text-[#FEE5A5] transition-colors">
-                          {new Date(call.created_at).toLocaleDateString([], {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </span>
-                        <span className="text-xs text-[#717680] font-mono">
-                          {new Date(call.created_at).toLocaleTimeString([], {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                        <span className="text-xs text-[#717680] font-mono">
-                          • {Math.round(call.duration_seconds || 0)}s
-                        </span>
-
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                            isConnected
-                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                              : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                          }`}
-                        >
-                          {call.call_status || "connected"}
-                        </span>
-
-                        {call.call_outcome && (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] font-medium">
-                            {formatOutcomeTag(call.call_outcome)}
-                          </span>
-                        )}
-
-                        {hasFollowUp && (
-                          <span className="px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[10px] font-semibold flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" />
-                            Follow-up Needed
-                          </span>
-                        )}
+                  <li key={call.id || idx}>
+                    <button
+                      onClick={() => setSelectedCallForDrawer(call)}
+                      className="w-full grid grid-cols-[132px_1fr_16px] gap-x-6 py-4 text-left group"
+                    >
+                      <div>
+                        <div className="text-[13px] text-zinc-200">
+                          {when.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
+                        </div>
+                        <div className="text-[12px] text-zinc-500 mt-0.5 tabular-nums">
+                          {when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                          {call.duration_seconds > 0 ? ` · ${formatDuration(call.duration_seconds)}` : ""}
+                        </div>
                       </div>
-
-                      {/* Clean 1-2 line summary with generous line-height */}
-                      <p className="text-xs text-[#B5BAC3] leading-relaxed line-clamp-2">
-                        {call.call_summary || call.health_update || "Check-in call logged."}
-                      </p>
-                    </div>
-
-                    {/* Right affordance */}
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] group-hover:bg-[#FEE5A5] text-zinc-400 group-hover:text-black transition-all text-xs font-semibold shrink-0 self-center">
-                      <span>Inspect</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </div>
-                  </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-3 text-[12px]">
+                          <StatusLabel tone={status.tone}>{status.label}</StatusLabel>
+                          {call.call_outcome && <span className="text-zinc-500">{humanize(call.call_outcome)}</span>}
+                          {needsFollowUp && <StatusLabel tone="watch">Follow-up</StatusLabel>}
+                        </div>
+                        <p className="text-[13px] text-zinc-400 group-hover:text-zinc-200 leading-6 mt-1 line-clamp-2 transition-colors">
+                          {call.call_summary || call.health_update || (status.tone === "good" ? "Check-in completed." : "No conversation.")}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-zinc-700 group-hover:text-zinc-300 transition-colors self-center" />
+                    </button>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
         </div>
       )}
@@ -572,6 +507,35 @@ export function ParentDetailCanvas({
         </div>
       )}
 
+      {/* Memory Tab */}
+      {activeTab === "memory" && (
+        <div className="pt-8">
+          <MemoryPanel
+            key={parent.id}
+            parentId={parent.id}
+            parentName={parent.parent_name}
+            onOpenCall={(attemptId) => {
+              const match = (parent.calls || []).find(
+                (c: any) => c.attempt_id === attemptId || c.id === attemptId
+              );
+              setSelectedCallForDrawer(
+                match || {
+                  id: attemptId,
+                  attempt_id: attemptId,
+                  parent_name: parent.parent_name,
+                  parent_phone: parent.phone_number,
+                  child_name: child,
+                  call_status: "connected",
+                  duration_seconds: 0,
+                  created_at: "",
+                  has_recording: false,
+                }
+              );
+            }}
+          />
+        </div>
+      )}
+
       {/* Details Tab */}
       {activeTab === "details" && (
         <div className="pt-6 space-y-4 max-w-4xl">
@@ -596,12 +560,6 @@ export function ParentDetailCanvas({
               </div>
             </div>
 
-            <div className="pt-4 border-t border-[#202328]">
-              <span className="text-[#717680] block mb-1">Anya&apos;s Working Prompt Memory</span>
-              <pre className="p-3 rounded-xl bg-[#0C0D0E] border border-[#202328] text-[11px] text-[#A1A1AA] font-mono whitespace-pre-wrap leading-relaxed">
-                {workingPromptMemory}
-              </pre>
-            </div>
           </div>
         </div>
       )}
