@@ -6,6 +6,7 @@ import {
 } from "@/lib/types";
 import { buildSarvamVariables, resolveCallCount } from "@/lib/prompts";
 import { getServiceSupabase } from "@/lib/supabase";
+import { getSavedAgentVersion } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -160,10 +161,13 @@ export async function POST(req: NextRequest) {
     const workspaceId =
       config?.sarvamWorkspaceId || process.env.SARVAM_WORKSPACE_ID || "";
     const appId = config?.sarvamAppId || process.env.SARVAM_APP_ID || "";
+    // Precedence: version saved in dashboard settings > request config > env > 12
+    const savedAppVersion = await getSavedAgentVersion();
     const appVersion =
-      (config?.sarvamAppVersion && config.sarvamAppVersion > 1)
+      savedAppVersion ??
+      ((config?.sarvamAppVersion && config.sarvamAppVersion > 1)
         ? config.sarvamAppVersion
-        : (Number(process.env.SARVAM_APP_VERSION) || 12);
+        : (Number(process.env.SARVAM_APP_VERSION) || 12));
     const connectionId =
       config?.connectionId || process.env.SARVAM_CONNECTION_ID || "";
     const agentPhone =

@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
-import { Users, Phone } from "lucide-react";
+import React, { useState } from "react";
+import { Users, Phone, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AgentSettingsModal } from "./AgentSettingsModal";
 
 interface SidebarProps {
   activeTab?: "parents" | "calls";
@@ -18,6 +19,7 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const currentTab = activeTab || (pathname?.startsWith("/calls") ? "calls" : "parents");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const initial = userName ? userName.charAt(0).toUpperCase() : "V";
 
   return (
@@ -33,7 +35,7 @@ export function Sidebar({
           </Link>
         </div>
 
-        {/* Nav Links: Only Parents and Calls */}
+        {/* Nav Links */}
         <nav className="space-y-1.5">
           <Link
             href="/"
@@ -58,6 +60,15 @@ export function Sidebar({
             <Phone className="w-4 h-4 shrink-0" />
             <span>Calls</span>
           </Link>
+
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-[#8E929A] hover:text-white hover:bg-[#141619]"
+          >
+            <Settings className="w-4 h-4 shrink-0" />
+            <span>Settings</span>
+          </button>
         </nav>
       </div>
 
@@ -75,6 +86,8 @@ export function Sidebar({
           </div>
         </div>
       </div>
+
+      <AgentSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </aside>
   );
 }

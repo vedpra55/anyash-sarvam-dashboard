@@ -115,6 +115,7 @@ components (`Header`, `CallTriggerCard`, `ConfigModal`, `WebVoiceSimulator`,
 | `/api/calls/sync` | GET | Legacy: last 30 days of attempts + transcripts, builds decision cards heuristically |
 | `/api/analytics` | GET | Overview + goal metrics (connectivity, duration, cost in INR, turns, language split) — used by legacy platform tabs |
 | `/api/health/analyze` | POST | Legacy keyword heuristic (chest/knee/sleep/missed meds) → decision card |
+| `/api/settings` | GET / PUT | Read / save the Sarvam agent version used for outbound calls (stored in `app_settings`) |
 | `/api/webhooks/sarvam` | POST | Sarvam post-call webhook: bumps `number_of_calls` on a successful call and updates `CALL COUNT` in the context |
 
 Test calls are filtered out (`lib/sarvam.ts#isTestCall`): web sessions
@@ -181,7 +182,7 @@ Security advisor: no findings.
 
 Migrations: `create_call_records_and_decision_cards`,
 `create_parent_profiles_and_daily_health_logs`,
-`add_unique_index_parent_id_log_date`.
+`add_unique_index_parent_id_log_date`, `create_app_settings`.
 
 ### Tables
 
@@ -214,6 +215,9 @@ post-call variable, `raw_agent_variables`, `transcript`,
 `next_action`, `next_follow_up_date`, `family_notification`,
 `action_completed`.
 
+**`app_settings`** (key/value settings edited from the dashboard)
+`key` (PK), `value` jsonb, `updated_at`. Currently holds `sarvam_app_version`.
+
 ### Edge Function `sarvam-call-handler` (v14, `verify_jwt: false`)
 
 Two modes on POST:
@@ -245,8 +249,10 @@ Env vars (`.env.example`):
 | `APP_BASE_URL` | Base for the Sarvam webhook URL (default `https://anyash.vercel.app`) |
 | `OPENAI_KEY` | Listed, but only the Edge Function uses OpenAI (set it as a Supabase function secret) |
 
-Note: `SARVAM_APP_VERSION` falls back to **12** in code while the agent is at
-version 26 — set it explicitly.
+**Agent version** is set from the dashboard: sidebar → **Settings** → enter
+the version → Save. It is stored in Supabase `app_settings`
+(`key = sarvam_app_version`). Outbound calls use: saved setting →
+`SARVAM_APP_VERSION` env → 12.
 
 Scripts: `npm run dev`, `npm run build`, `npm start`, `npm run lint`.
 Node 18–22.
