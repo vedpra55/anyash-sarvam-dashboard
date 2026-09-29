@@ -71,7 +71,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased selection:bg-blue-500/20 selection:text-blue-900;
+    @apply antialiased;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
@@ -88,11 +88,30 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0b0c0e;
+}
+
+::selection {
+  background: rgba(254, 229, 165, 0.25);
+  color: #fff;
+}
+
+/* Form fields draw their own focus ring. */
+:focus-visible:not(input):not(textarea):not(select) {
+  outline: 2px solid rgba(254, 229, 165, 0.6);
+  outline-offset: 2px;
 }
 
 /* Soundwave animations for Live Call screen */

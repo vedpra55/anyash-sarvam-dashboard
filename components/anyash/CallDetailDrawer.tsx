@@ -51,7 +51,7 @@ function formatAudioTime(seconds: number): string {
 /* Audio                                                               */
 /* ------------------------------------------------------------------ */
 
-function AudioPlayer({ interactionId, fallbackDuration }: { interactionId: string; fallbackDuration: number }) {
+export function AudioPlayer({ interactionId, fallbackDuration }: { interactionId: string; fallbackDuration: number }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);

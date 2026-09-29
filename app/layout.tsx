@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Anyash | Operator Control Room & Family Health Companion",
-  description:
-    "The central operator dashboard for Anyash. Autonomous parent check-in calls, proactive health memory, and decision triage for operators and families.",
+  title: "Anyash",
+  description: "Daily check-in calls, health memory and follow-ups for the parents you care for.",
 };
 
 export default function RootLayout({
@@ -14,7 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] antialiased">
+      <body className="min-h-screen bg-ay-canvas text-zinc-300 antialiased">
         {children}
       </body>
     </html>

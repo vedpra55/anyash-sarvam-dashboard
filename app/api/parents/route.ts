@@ -34,17 +34,56 @@ export async function GET() {
       .in("parent_id", parentIds)
       .order("log_date", { ascending: false });
 
-    // 4. Link Sarvam calls and daily logs to each parent
+    // 4. AI reviews of recent calls (call_records) and their decision cards
+    const { data: records } = await supabase
+      .from("call_records")
+      .select(
+        "attempt_id, parent_id, created_at, call_outcome, follow_up_needed, follow_up_detail, ai_decision, ai_urgency, ai_observation, ai_recommended_action"
+      )
+      .in("parent_id", parentIds)
+      .eq("ai_processed", true)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    const attemptIds = (records || []).map((r) => r.attempt_id);
+    const { data: cards } = attemptIds.length
+      ? await supabase
+          .from("decision_cards")
+          .select("id, attempt_id, next_action, next_follow_up_date, action_completed, created_at")
+          .in("attempt_id", attemptIds)
+          .order("created_at", { ascending: false })
+      : { data: [] as any[] };
+
+    const cardByAttempt = new Map<string, any>();
+    for (const card of cards || []) {
+      if (!cardByAttempt.has(card.attempt_id)) cardByAttempt.set(card.attempt_id, card);
+    }
+
+    // 5. Link Sarvam calls, daily logs and reviews to each parent
     const parentsWithCalls = linkCallsToParents(parents, sarvamCalls);
 
     const enrichedParents = parentsWithCalls.map((parent) => {
       const parentLogs = (dailyLogs || []).filter((l) => l.parent_id === parent.id);
       const latestLog = parentLogs[0] || null;
+      const reviews = (records || [])
+        .filter((r) => r.parent_id === parent.id)
+        .slice(0, 10)
+        .map((r) => {
+          const card = cardByAttempt.get(r.attempt_id);
+          return {
+            ...r,
+            card_id: card?.id || null,
+            next_action: card?.next_action || null,
+            next_follow_up_date: card?.next_follow_up_date || null,
+            action_completed: Boolean(card?.action_completed),
+          };
+        });
 
       return {
         ...parent,
         latestLog,
-        dailyLogs: parentLogs.slice(0, 10),
+        dailyLogs: parentLogs.slice(0, 14),
+        reviews,
       };
     });
 
@@ -80,18 +119,24 @@ export async function POST(req: NextRequest) {
     const cleanPhone = phone_number.replace(/[^\d+]/g, "");
     const last10 = cleanPhone.slice(-10);
 
-    // Parse routines if provided as text or list
-    const routines = routines_text
-      ? [{ time: "Daily Routine", activity: routines_text }]
-      : [
-          { time: "06:30 AM", activity: "Morning terrace walk" },
-          { time: "08:30 AM", activity: "Breakfast and morning medication" },
-          { time: "02:00 PM", activity: "Afternoon rest" },
-        ];
+    // Structured lists from the form; free-text fields are still accepted.
+    const cleanList = (value: unknown): string[] =>
+      Array.isArray(value) ? value.map((s) => String(s).trim()).filter(Boolean) : [];
 
-    const conditions = baseline_text
+    const routines = Array.isArray(body.routines)
+      ? body.routines
+          .map((r: any) => ({ time: String(r.time || "").trim(), activity: String(r.activity || "").trim() }))
+          .filter((r: any) => r.activity)
+      : routines_text
+      ? [{ time: "Daily Routine", activity: routines_text }]
+      : [];
+
+    const conditions = Array.isArray(body.conditions)
+      ? cleanList(body.conditions)
+      : baseline_text
       ? baseline_text.split(/[,;\n]+/).map((s: string) => s.trim()).filter(Boolean)
-      : ["General elder wellness"];
+      : [];
+    const medications = cleanList(body.medications);
 
     const effectiveChild = child_name || "Family";
     const effectiveRel = relationship || "Child";
@@ -127,6 +172,7 @@ export async function POST(req: NextRequest) {
           routines,
           medical_baseline: {
             conditions,
+            medications,
           },
           updated_at: new Date().toISOString(),
         })
@@ -158,6 +204,7 @@ export async function POST(req: NextRequest) {
         routines,
         medical_baseline: {
           conditions,
+          medications,
         },
         current_user_context: newContext,
       })

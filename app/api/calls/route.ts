@@ -148,10 +148,34 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Attach the AI review verdict stored in Supabase for each call
+    const reviewByAttempt = new Map<string, any>();
+    const attemptIds = calls.map((c) => c.attempt_id).filter(Boolean);
+    if (attemptIds.length > 0) {
+      try {
+        const { data: reviews } = await supabase
+          .from("call_records")
+          .select("attempt_id, ai_decision, ai_urgency")
+          .in("attempt_id", attemptIds);
+        for (const r of reviews || []) reviewByAttempt.set(r.attempt_id, r);
+      } catch (reviewErr) {
+        console.warn("Could not load call reviews:", reviewErr);
+      }
+    }
+
+    const callsWithReviews = calls.map((c) => {
+      const review = reviewByAttempt.get(c.attempt_id);
+      return {
+        ...c,
+        ai_decision: review?.ai_decision || undefined,
+        ai_urgency: review?.ai_urgency || undefined,
+      };
+    });
+
     return NextResponse.json({
       success: true,
-      calls,
-      total: calls.length,
+      calls: callsWithReviews,
+      total: callsWithReviews.length,
     });
   } catch (err: any) {
     console.error("Failed to fetch Sarvam calls:", err);

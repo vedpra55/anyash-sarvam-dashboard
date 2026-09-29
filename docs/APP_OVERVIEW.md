@@ -63,40 +63,53 @@ Dashboard reads Sarvam Analytics (attempts, transcripts, recordings)
 
 ## 2. Dashboard (frontend)
 
-Only the pages below are wired up. The `components/anyash/*` components are
-the live UI.
+Every screen follows one priority order: who needs attention now, then what
+happened today, then trends, then reference details. Design: no nested
+cards; typography, spacing and label/value rows; status as a colored dot plus
+text; the yellow accent only on the main action. Tokens live in
+`tailwind.config.js` (`ay-*`), shared pieces in `components/anyash/primitives.tsx`
+(buttons, modal, fields, tabs, toast) and `components/anyash/detail-ui.tsx`
+(sections, label/value rows, status vocabulary, memory rendering).
 
-### `/` — Parents
+Attention ranking (`lib/attention.ts`), shared by Today and the Parents list:
+escalate → let the family know → follow-up needed → not reached today → no
+check-in for 2+ days → keep an eye on it → no concerns. A follow-up marked
+done (`decision_cards.action_completed`) drops out.
+
+### `/` — Today
 File: `app/page.tsx`
+- One-line summary: checked in, calls placed, needing attention.
+- **Needs attention**: each item with its reason, **Call** and **Mark done**.
+- **Today's check-ins**: every parent's state today (checked in / not
+  reached / not called yet) with the call summary or what Anya will ask.
 
-- **Sidebar** (`anyash/Sidebar.tsx`): nav to Parents and Calls.
-- **Parents list** (`anyash/ParentsListColumn.tsx`): all rows of
-  `parent_profiles`, with latest call status.
-- **Parent detail** (`anyash/ParentDetailCanvas.tsx`): phone, honorific,
-  language, caregiver/child, known conditions, medicines, usual routine,
-  family & caregiver context, mood, **Daily Health Logs** (last 10), and
-  **Check-in Calls History** (Sarvam calls matched by last 10 phone digits).
-- **Add / Edit / Delete parent** (`AddParentModal`, `EditParentModal`,
-  delete confirm in `page.tsx`).
-- **Call modal** (`anyash/CallModal.tsx`): pick language, call number,
-  optionally override the "context for this call" (user_context) and the
-  greeting, then triggers `POST /api/calls/outbound`.
+### `/parents` — Parents
+File: `app/parents/page.tsx` (`?id=` selects a parent; on phones the list
+and the detail are separate screens).
+- **List** (`ParentsListColumn.tsx`): sorted by attention, status dot, last
+  call, verdict and reason.
+- **Detail** (`ParentDetailCanvas.tsx`), tabs:
+  - *Overview*: verdict and reason, what Anya will ask, next step; latest
+    check-in with audio; **last 7 days** strip (`TrendStrip.tsx`: check-in,
+    sleep, pain, mood, appetite, medicines).
+  - *Calls*: every call; opens the call drawer.
+  - *Memory* (`MemoryPanel.tsx`): Anya's memory as sections, edit in place,
+    history of how it changed per call.
+  - *Profile*: contact, conditions, medicines, routine.
+- **Pop-ups** (`useParentActions.tsx`): Call (`CallModal.tsx`), Add/Edit
+  parent with structured conditions, medicines and routine
+  (`ParentFormModal.tsx`), Remove.
 
-### `/calls` — Call logs
+### `/calls` — Calls
 File: `app/calls/page.tsx`
+- Calls since **25 Sep 2026** (intentional cutoff), grouped by day, with
+  status, one-line summary, duration and AI verdict. Filters: All · Needs
+  attention · Not reached, plus search.
+- **Call drawer** (`CallDetailDrawer.tsx`): Summary (AI assessment, health
+  log, mood), Conversation, Memory (what changed on this call).
 
-- Table of all outbound calls since **25 Sep 2026** (hard-coded cutoff),
-  filters by status (Connected / Busy-Unanswered) and time.
-- **Call detail drawer** (`anyash/CallDetailDrawer.tsx`): summary, outcome,
-  mood, follow-up, transcript and audio recording.
-
-### Unused / legacy code
-Not imported by any page — earlier iterations kept in the repo:
-`components/operator/*`, `components/platform/*`, and the root-level
-components (`Header`, `CallTriggerCard`, `ConfigModal`, `WebVoiceSimulator`,
-`LivingSummaryCard`, `ActionDecisionFeed`, `CallHistoryCard`,
-`ProfileEditModal`), plus `lib/storage.ts` (localStorage store) and
-`lib/prompts.ts#buildHealthCompanionPrompt`. Candidates for deletion.
+### Settings
+Sidebar → Settings: Sarvam agent version (`AgentSettingsModal.tsx`).
 
 ---
 
@@ -104,16 +117,19 @@ components (`Header`, `CallTriggerCard`, `ConfigModal`, `WebVoiceSimulator`,
 
 | Route | Method | What it does |
 |---|---|---|
-| `/api/parents` | GET | All `parent_profiles` + Sarvam calls (linked by phone) + last 10 `daily_health_logs` each |
-| `/api/parents` | POST | Create parent (or update existing with same phone). Seeds `current_user_context`, `facts`, `routines`, `medical_baseline` |
+| `/api/parents` | GET | All `parent_profiles` + Sarvam calls (linked by phone) + last 14 `daily_health_logs` + recent AI reviews (`call_records` + `decision_cards`) each |
+| `/api/parents` | POST | Create parent (or update existing with same phone). Accepts structured `routines`, `conditions`, `medications`. Seeds `current_user_context` and `facts` |
+| `/api/parents/[id]/memory` | GET | Current memory plus how it changed on each call |
+| `/api/decisions/[id]` | PATCH | Mark a decision card's follow-up done / not done |
+| `/api/calls/details` | GET | AI assessment, decision card and health log for one call (`attempt_id`) |
 | `/api/parents/[id]` | PATCH | Update parent fields; keeps the initial 2-line context in sync with names |
 | `/api/parents/[id]` | DELETE | Deletes daily logs, call records, decision cards, then the parent |
 | `/api/calls/outbound` | POST | Resolves/creates the Supabase profile, syncs call count & context, calls Sarvam Outbound API. Falls back to a **simulated** attempt if telephony env vars are missing |
-| `/api/calls` | GET | Sarvam Analytics attempts (outbound, non-test, since 25 Sep 2026), normalised and name-matched to parents |
+| `/api/calls` | GET | Sarvam Analytics attempts (outbound, non-test, since 25 Sep 2026), normalised, name-matched to parents, with the AI verdict from `call_records` |
 | `/api/calls/transcript` | GET | Transcript by `interaction_id` from Sarvam; falls back to `call_records.transcript` |
 | `/api/calls/recording` | GET | Streams the call audio from Sarvam |
 | `/api/calls/sync` | GET | Legacy: last 30 days of attempts + transcripts, builds decision cards heuristically |
-| `/api/analytics` | GET | Overview + goal metrics (connectivity, duration, cost in INR, turns, language split) — used by legacy platform tabs |
+| `/api/analytics` | GET | Overview + goal metrics (connectivity, duration, cost in INR, turns, language split) (not used by the UI) |
 | `/api/health/analyze` | POST | Legacy keyword heuristic (chest/knee/sleep/missed meds) → decision card |
 | `/api/settings` | GET / PUT | Read / save the Sarvam agent version used for outbound calls (stored in `app_settings`) |
 | `/api/webhooks/sarvam` | POST | Sarvam post-call webhook: bumps `number_of_calls` on a successful call and updates `CALL COUNT` in the context |
@@ -270,11 +286,12 @@ Node 18–22.
    It can also write call records. Add a shared-secret header checked by the
    function and configured in the Sarvam tool.
 3. **Double increment** of `number_of_calls` (webhook + Edge Function), see §1.
-4. **Hard-coded date cutoff** `2026-09-25` in `/api/calls` and `lib/sarvam.ts`.
-5. **Heuristic decision cards** in `/api/calls/sync`, `/api/health/analyze`
+4. **Heuristic decision cards** in `/api/calls/sync`, `/api/health/analyze`
    and the webhook are keyword-based and separate from the AI cards stored in
-   `decision_cards`; the dashboard does not yet read `decision_cards`.
-6. **Fallback defaults** in the Edge Function (e.g. "HTN on Amlodipine",
+   `decision_cards` (which the dashboard now reads). Those legacy routes are
+   unused by the UI.
+5. **Fallback defaults** in the Edge Function (e.g. "HTN on Amlodipine",
    "6:30 AM garden walk") can leak into a real parent's context if the AI
    call fails.
-7. Large amount of unused legacy UI code (§2).
+6. **No login**: the dashboard and its API routes are open to anyone with
+   the URL.

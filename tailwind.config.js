@@ -21,6 +21,16 @@ module.exports = {
         '16': 'repeat(16, minmax(0, 1fr))',
       },
       colors: {
+        // Anyash dashboard tokens. Text uses zinc-100 / 300 / 500 / 600 for its four levels.
+        ay: {
+          canvas: "#0B0C0E",
+          surface: "#111215",
+          raised: "#17181C",
+          line: "rgba(255, 255, 255, 0.06)",
+          accent: "#FEE5A5",
+          "accent-hover": "#FDE8B0",
+          "accent-ink": "#E9D39A",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
