@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import { getSarvamAttempts } from "@/lib/sarvam";
 
 export const dynamic = "force-dynamic";
 
@@ -16,23 +17,25 @@ function isTestCall(item: any) {
 
 export async function GET(req: NextRequest) {
   try {
-    const apiKey = process.env.SARVAM_API_KEY || "";
-    const orgId = process.env.SARVAM_ORG_ID || "";
-    const workspaceId = process.env.SARVAM_WORKSPACE_ID || "";
-    const appId = process.env.SARVAM_APP_ID || "";
+    // Parent profiles (for phone matching) and Sarvam attempts load in parallel.
+    const supabase = getServiceSupabase();
+    const [parentsResult, attempts] = await Promise.all([
+      Promise.resolve(supabase.from("parent_profiles").select("id, parent_name, phone_number, child_name")).catch(
+        (dbErr) => {
+          console.warn("Could not query parent profiles for phone matching:", dbErr);
+          return { data: null };
+        }
+      ),
+      getSarvamAttempts(100),
+    ]);
 
-    if (!apiKey || !orgId || !workspaceId || !appId) {
-      return NextResponse.json(
-        { error: "Sarvam environment variables not configured" },
-        { status: 500 }
-      );
+    if (!attempts.ok) {
+      return NextResponse.json({ error: attempts.error }, { status: attempts.status });
     }
 
-    // Load parent profiles from Supabase to match by phone number if needed
-    const supabase = getServiceSupabase();
     let phoneToParentMap = new Map<string, { id: string; name: string; child_name?: string }>();
-    try {
-      const { data: parents } = await supabase.from("parent_profiles").select("id, parent_name, phone_number, child_name");
+    {
+      const parents = parentsResult.data;
       if (parents) {
         for (const p of parents) {
           const raw = (p.phone_number || "").replace(/[^0-9+]/g, "");
@@ -44,40 +47,9 @@ export async function GET(req: NextRequest) {
           }
         }
       }
-    } catch (dbErr) {
-      console.warn("Could not query parent profiles for phone matching:", dbErr);
     }
 
-    // Strictly fetch only calls on or after 25 Sep 2026
-    const startIso = "2026-09-25T00:00:00.000Z";
-    const future = new Date();
-    future.setDate(future.getDate() + 1);
-    const endIso = future.toISOString();
-
-    const attemptsUrl = `https://apps.sarvam.ai/api/analytics/v1/${orgId}/${workspaceId}/${appId}/attempts?start_datetime=${encodeURIComponent(
-      startIso
-    )}&end_datetime=${encodeURIComponent(endIso)}&limit=100`;
-
-    const sarvamRes = await fetch(attemptsUrl, {
-      method: "GET",
-      headers: {
-        "X-API-Key": apiKey.trim(),
-        "API-Subscription-Key": apiKey.trim(),
-      },
-      cache: "no-store",
-    });
-
-    if (!sarvamRes.ok) {
-      const errText = await sarvamRes.text();
-      console.error(`Sarvam attempts API returned ${sarvamRes.status}:`, errText);
-      return NextResponse.json(
-        { error: `Sarvam API error (${sarvamRes.status}): ${errText}` },
-        { status: sarvamRes.status }
-      );
-    }
-
-    const data = await sarvamRes.json();
-    const rawItems: any[] = data.items || [];
+    const rawItems: any[] = attempts.items;
     const minTimestamp = new Date("2026-09-25T00:00:00Z").getTime();
 
     // Filter to legitimate parent phone calls starting strictly from 25 Sep 2026

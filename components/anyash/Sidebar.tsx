@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Sun, Users, Phone, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AgentSettingsModal } from "./AgentSettingsModal";
+import { parentsQuery, callsQuery } from "@/lib/queries";
 
 const NAV = [
   { href: "/", label: "Today", icon: Sun },
@@ -17,10 +19,18 @@ function isActive(pathname: string | null, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-/** Left navigation on desktop, a top bar on small screens. Wraps every page. */
+/** Left navigation on desktop, a top bar on small screens. Rendered once in the root layout. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Load the data every page needs as soon as the app opens, so moving between
+  // Today, Parents and Calls never waits on the network.
+  useEffect(() => {
+    queryClient.prefetchQuery(parentsQuery);
+    queryClient.prefetchQuery(callsQuery);
+  }, [queryClient]);
 
   return (
     <div className="flex flex-col md:flex-row h-[100dvh] w-full overflow-hidden bg-ay-canvas text-zinc-300">

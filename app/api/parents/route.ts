@@ -8,11 +8,11 @@ export async function GET() {
   try {
     const supabase = getServiceSupabase();
 
-    // 1. Fetch all parent profiles from Supabase
-    const { data: parents, error: parentsErr } = await supabase
-      .from("parent_profiles")
-      .select("*")
-      .order("updated_at", { ascending: false });
+    // 1. Parent profiles (Supabase) and live calls (Sarvam) load in parallel.
+    const [{ data: parents, error: parentsErr }, sarvamCalls] = await Promise.all([
+      supabase.from("parent_profiles").select("*").order("updated_at", { ascending: false }),
+      fetchSarvamCalls({ limit: 100 }),
+    ]);
 
     if (parentsErr) {
       console.error("Error fetching parent profiles:", parentsErr);
@@ -23,28 +23,28 @@ export async function GET() {
       return NextResponse.json({ parents: [] });
     }
 
-    // 2. Fetch live calls directly from Sarvam AI Analytics
-    const sarvamCalls = await fetchSarvamCalls({ daysBack: 90, limit: 100 });
-
-    // 3. Fetch latest daily logs for each parent from Supabase
+    // 2. Daily logs (last 14 days) and AI reviews of recent calls, in parallel.
     const parentIds = parents.map((p) => p.id);
-    const { data: dailyLogs } = await supabase
-      .from("daily_health_logs")
-      .select("*")
-      .in("parent_id", parentIds)
-      .order("log_date", { ascending: false });
+    const since = new Date(Date.now() - 14 * 86400000).toISOString().split("T")[0];
+    const [{ data: dailyLogs }, { data: records }] = await Promise.all([
+      supabase
+        .from("daily_health_logs")
+        .select("*")
+        .in("parent_id", parentIds)
+        .gte("log_date", since)
+        .order("log_date", { ascending: false }),
+      supabase
+        .from("call_records")
+        .select(
+          "attempt_id, parent_id, created_at, call_outcome, follow_up_needed, follow_up_detail, ai_decision, ai_urgency, ai_observation, ai_recommended_action"
+        )
+        .in("parent_id", parentIds)
+        .eq("ai_processed", true)
+        .order("created_at", { ascending: false })
+        .limit(200),
+    ]);
 
-    // 4. AI reviews of recent calls (call_records) and their decision cards
-    const { data: records } = await supabase
-      .from("call_records")
-      .select(
-        "attempt_id, parent_id, created_at, call_outcome, follow_up_needed, follow_up_detail, ai_decision, ai_urgency, ai_observation, ai_recommended_action"
-      )
-      .in("parent_id", parentIds)
-      .eq("ai_processed", true)
-      .order("created_at", { ascending: false })
-      .limit(200);
-
+    // 3. Decision cards for those reviews.
     const attemptIds = (records || []).map((r) => r.attempt_id);
     const { data: cards } = attemptIds.length
       ? await supabase

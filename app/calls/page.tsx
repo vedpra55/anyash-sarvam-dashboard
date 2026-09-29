@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { RotateCw, Search } from "lucide-react";
-import { AppShell } from "@/components/anyash/Sidebar";
 import { CallDetailDrawer } from "@/components/anyash/CallDetailDrawer";
-import { EmptyState, IconButton, LoadingText, Segmented, Button } from "@/components/anyash/primitives";
-import { Dot, StatusLabel, callStatusMeta, decisionMeta, formatDuration, humanize } from "@/components/anyash/detail-ui";
+import { EmptyState, IconButton, Segmented, Button } from "@/components/anyash/primitives";
+import { CallsSkeleton } from "@/components/anyash/Skeletons";
+import { useCallsQuery, prefetchCall } from "@/lib/queries";
+import { Dot, StatusLabel, callStatusMeta, decisionMeta, formatDuration, formatRelative, humanize } from "@/components/anyash/detail-ui";
 import { isConnected } from "@/lib/attention";
 
 interface CallItem {
@@ -53,33 +55,23 @@ function dayLabel(date: Date) {
 }
 
 export default function CallsPage() {
-  const [calls, setCalls] = useState<CallItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
+  const callsQuery = useCallsQuery();
+  const calls = (callsQuery.data || []) as CallItem[];
+  const isLoading = callsQuery.isPending;
+  const isRefreshing = callsQuery.isFetching && !callsQuery.isPending;
+  const error = callsQuery.isError && !callsQuery.data ? callsQuery.error.message : "";
+  const refreshError = callsQuery.isError && callsQuery.data ? callsQuery.error.message : "";
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedCall, setSelectedCall] = useState<CallItem | null>(null);
 
-  const fetchCalls = useCallback(async (refresh = false) => {
-    refresh ? setIsRefreshing(true) : setIsLoading(true);
-    try {
-      const res = await fetch("/api/calls", { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Couldn't load calls");
-      setCalls(data.calls || []);
-      setError("");
-    } catch (err: any) {
-      setError(err.message || "Couldn't load calls");
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
-
+  // Re-render the "updated … ago" label every 30 seconds.
+  const [, setTick] = useState(0);
   useEffect(() => {
-    fetchCalls();
-  }, [fetchCalls]);
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   const counts = useMemo(
     () => ({
@@ -113,7 +105,7 @@ export default function CallsPage() {
   }, [calls, query, filter]);
 
   return (
-    <AppShell>
+    <>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[1080px] mx-auto px-5 sm:px-10 py-8 sm:py-12">
           <div className="flex items-center justify-between gap-4">
@@ -121,9 +113,16 @@ export default function CallsPage() {
               Calls
               {calls.length > 0 && <span className="ml-2 text-[15px] font-normal text-zinc-600 tabular-nums">{calls.length}</span>}
             </h1>
-            <IconButton label="Refresh" onClick={() => fetchCalls(true)} disabled={isRefreshing}>
-              <RotateCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
-            </IconButton>
+            <div className="flex items-center gap-2">
+              {callsQuery.dataUpdatedAt > 0 && (
+                <span className="hidden sm:inline text-[12px] text-zinc-600">
+                  {isRefreshing ? "Refreshing…" : `Updated ${formatRelative(new Date(callsQuery.dataUpdatedAt).toISOString())}`}
+                </span>
+              )}
+              <IconButton label="Refresh" onClick={() => callsQuery.refetch()} disabled={isRefreshing}>
+                <RotateCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              </IconButton>
+            </div>
           </div>
 
           <div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
@@ -148,10 +147,16 @@ export default function CallsPage() {
             </div>
           </div>
 
+          {refreshError && (
+            <p className="mt-4 text-[12.5px] text-amber-200/80">Couldn&apos;t refresh just now; showing the last loaded calls.</p>
+          )}
+
           {isLoading ? (
-            <LoadingText>Loading calls…</LoadingText>
+            <div className="mt-6">
+              <CallsSkeleton />
+            </div>
           ) : error ? (
-            <EmptyState title="Couldn't load calls." action={<Button size="sm" onClick={() => fetchCalls()}>Try again</Button>}>
+            <EmptyState title="Couldn't load calls." action={<Button size="sm" onClick={() => callsQuery.refetch()}>Try again</Button>}>
               {error}
             </EmptyState>
           ) : groups.length === 0 ? (
@@ -185,6 +190,8 @@ export default function CallsPage() {
                         <li key={call.id}>
                           <button
                             onClick={() => setSelectedCall(call)}
+                            onMouseEnter={() => prefetchCall(queryClient, call)}
+                            onFocus={() => prefetchCall(queryClient, call)}
                             className={`w-full text-left grid grid-cols-[56px_1fr] md:grid-cols-[64px_180px_1fr_64px_150px] gap-x-4 gap-y-1 py-3.5 items-baseline transition-colors hover:bg-white/[0.02] -mx-2 px-2 rounded-md ${
                               selectedCall?.id === call.id ? "bg-white/[0.04]" : ""
                             }`}
@@ -218,6 +225,6 @@ export default function CallsPage() {
       </div>
 
       <CallDetailDrawer call={selectedCall as any} onClose={() => setSelectedCall(null)} />
-    </AppShell>
+    </>
   );
 }

@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { X, Play, Pause, ChevronRight } from "lucide-react";
 import { SarvamCallRecord } from "@/lib/sarvam";
 import { parseMemory, diffMemory } from "@/lib/memory";
+import { useCallDetails, useTranscript, TranscriptTurn } from "@/lib/queries";
+import { TextSkeleton } from "./Skeletons";
 import {
   Section,
   Field,
@@ -22,12 +24,6 @@ import {
 interface CallDetailDrawerProps {
   call: SarvamCallRecord | null;
   onClose: () => void;
-}
-
-interface TranscriptTurn {
-  turn_id: string;
-  role: "agent" | "user";
-  text: string;
 }
 
 interface CallDetails {
@@ -217,7 +213,11 @@ function SummaryTab({ call, details, loading }: { call: SarvamCallRecord; detail
         <p className="text-[14px] text-zinc-400 leading-7 mt-3">{healthUpdate}</p>
       )}
 
-      {loading && !details && <p className="text-[13px] text-zinc-600 pt-8">Loading assessment…</p>}
+      {loading && !details && (
+        <div className="pt-8">
+          <TextSkeleton lines={4} label="Loading assessment" />
+        </div>
+      )}
 
       {record && (observed || nextStep || assessment) && (
         <Section title="Assessment" aside={record.ai_model ? <span className="text-[12px] text-zinc-600">AI review</span> : null}>
@@ -354,7 +354,7 @@ function ConversationTab({
   parentName: string;
   durationSeconds: number;
 }) {
-  if (loading) return <p className="text-[13px] text-zinc-600">Loading conversation…</p>;
+  if (loading) return <TextSkeleton lines={6} label="Loading conversation" />;
   if (transcript.length === 0) {
     return (
       <p className="text-[13px] text-zinc-500">
@@ -397,7 +397,7 @@ function MemoryTab({ details, loading }: { details: CallDetails | null; loading:
     return { before, after, diff: diffMemory(before, after) };
   }, [record?.previous_user_context, record?.resulting_user_context]);
 
-  if (loading && !details) return <p className="text-[13px] text-zinc-600">Loading memory…</p>;
+  if (loading && !details) return <TextSkeleton lines={5} label="Loading memory" />;
   if (!parsed) {
     return (
       <div>
@@ -449,13 +449,25 @@ function MemoryTab({ details, loading }: { details: CallDetails | null; loading:
 
 export function CallDetailDrawer({ call, onClose }: CallDetailDrawerProps) {
   const [tab, setTab] = useState<Tab>("summary");
-  const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
-  const [isLoadingTranscript, setIsLoadingTranscript] = useState(false);
-  const [details, setDetails] = useState<CallDetails | null>(null);
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const attemptId = call?.attempt_id || call?.id;
+
+  // Transcript (Sarvam, with Supabase fallback) and the AI review, from the shared cache.
+  const transcriptQuery = useTranscript(attemptId, call?.interaction_id);
+  const detailsQuery = useCallDetails(attemptId);
+  const transcript = transcriptQuery.data || [];
+  const isLoadingTranscript = transcriptQuery.isPending && transcriptQuery.fetchStatus !== "idle";
+  const details: CallDetails | null = detailsQuery.data
+    ? detailsQuery.data
+    : detailsQuery.isError
+    ? { record: null, decisionCard: null, dailyLog: null }
+    : null;
+  const isLoadingDetails = detailsQuery.isPending && detailsQuery.fetchStatus !== "idle";
+
+  useEffect(() => {
+    setTab("summary");
+  }, [attemptId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
@@ -468,60 +480,6 @@ export function CallDetailDrawer({ call, onClose }: CallDetailDrawerProps) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
-
-  // Transcript (Sarvam, with Supabase fallback)
-  useEffect(() => {
-    setTab("summary");
-    setTranscript([]);
-    if (!call?.interaction_id && !attemptId) return;
-
-    let active = true;
-    setIsLoadingTranscript(true);
-    const params = new URLSearchParams();
-    if (call?.interaction_id && call.interaction_id !== "NO_INTERACTION_ID") {
-      params.set("interaction_id", call.interaction_id);
-    }
-    if (attemptId) params.set("attempt_id", attemptId);
-
-    fetch(`/api/calls/transcript?${params.toString()}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!active) return;
-        const raw = Array.isArray(data.transcript) && data.transcript.length ? data.transcript : data.messages || [];
-        setTranscript(
-          raw
-            .map((t: any, idx: number) => ({
-              turn_id: String(t.turn_id || idx + 1),
-              role: t.role === "assistant" || t.role === "agent" ? "agent" : "user",
-              // Sarvam marks barge-ins with "<interruption>"; show a cut-off instead.
-              text: (t.text || t.content || "").replace(/\s*<interruption>\s*/gi, "…").trim(),
-            }))
-            .filter((t: TranscriptTurn) => t.text)
-        );
-      })
-      .catch((err) => console.error("Failed to load transcript:", err))
-      .finally(() => active && setIsLoadingTranscript(false));
-
-    return () => {
-      active = false;
-    };
-  }, [call?.interaction_id, attemptId]);
-
-  // AI assessment, health log and memory change (Supabase)
-  useEffect(() => {
-    setDetails(null);
-    if (!attemptId) return;
-    let active = true;
-    setIsLoadingDetails(true);
-    fetch(`/api/calls/details?attempt_id=${encodeURIComponent(attemptId)}`)
-      .then((res) => res.json())
-      .then((data) => active && setDetails(data.error ? { record: null, decisionCard: null, dailyLog: null } : data))
-      .catch(() => active && setDetails({ record: null, decisionCard: null, dailyLog: null }))
-      .finally(() => active && setIsLoadingDetails(false));
-    return () => {
-      active = false;
-    };
-  }, [attemptId]);
 
   if (!call) return null;
 

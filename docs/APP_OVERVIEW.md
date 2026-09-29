@@ -111,6 +111,30 @@ File: `app/calls/page.tsx`
 ### Settings
 Sidebar → Settings: Sarvam agent version (`AgentSettingsModal.tsx`).
 
+### Data loading
+
+Stack: Next.js 16 (App Router, Turbopack, React Compiler), React 19,
+TanStack Query 5.
+
+- **One client cache** (`lib/queries.ts`, provider in `app/providers.tsx`).
+  The sidebar and cache live in the root layout, so they persist across page
+  changes. Parents and calls are prefetched when the app opens; switching
+  pages uses the cache and makes no network requests.
+- **Freshness:** data counts as fresh for 30 s, then refreshes in the
+  background on tab focus and every 60 s while the tab is visible; after a
+  call is placed it refreshes at once, at 20 s and at 90 s. A failed
+  background refresh keeps the cached data on screen with a notice.
+- **Per-call data** (review, transcript) and per-parent memory are cached
+  by key and prefetched on hover/focus of a call row or when a parent opens.
+- **Mutations:** Mark done updates instantly and rolls back on error; memory
+  saves update every screen that shows it; add/edit/remove refresh the cache.
+- **Server:** `/api/parents` runs its Supabase queries in parallel and
+  `/api/parents` + `/api/calls` share one Sarvam attempts request
+  (`lib/sarvam.ts#getSarvamAttempts`, 15 s reuse, concurrent requests
+  merged).
+- **Loading UI:** skeletons shaped like each screen (`Skeletons.tsx`), no
+  spinners; `app/error.tsx` catches page crashes.
+
 ---
 
 ## 3. API routes (`app/api`)
@@ -270,8 +294,8 @@ the version → Save. It is stored in Supabase `app_settings`
 (`key = sarvam_app_version`). Outbound calls use: saved setting →
 `SARVAM_APP_VERSION` env → 12.
 
-Scripts: `npm run dev`, `npm run build`, `npm start`, `npm run lint`.
-Node 18–22.
+Scripts: `npm run dev`, `npm run build`, `npm start`, `npm run typecheck`.
+Node 20.9 or newer (required by Next.js 16).
 
 ---
 

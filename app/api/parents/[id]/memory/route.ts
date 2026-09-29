@@ -9,16 +9,26 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const supabase = getServiceSupabase();
 
-    const { data: parent, error } = await supabase
-      .from("parent_profiles")
-      .select("id, parent_name, current_user_context, number_of_calls, last_call_timestamp, updated_at")
-      .eq("id", params.id)
-      .maybeSingle();
+    const [{ data: parent, error }, { data: history }] = await Promise.all([
+      supabase
+        .from("parent_profiles")
+        .select("id, parent_name, current_user_context, number_of_calls, last_call_timestamp, updated_at")
+        .eq("id", id)
+        .maybeSingle(),
+      supabase
+        .from("call_records")
+        .select("attempt_id, interaction_id, created_at, call_outcome, duration_seconds, previous_user_context, resulting_user_context")
+        .eq("parent_id", id)
+        .not("resulting_user_context", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(20),
+    ]);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -26,14 +36,6 @@ export async function GET(
     if (!parent) {
       return NextResponse.json({ error: "Parent not found" }, { status: 404 });
     }
-
-    const { data: history } = await supabase
-      .from("call_records")
-      .select("attempt_id, interaction_id, created_at, call_outcome, duration_seconds, previous_user_context, resulting_user_context")
-      .eq("parent_id", params.id)
-      .not("resulting_user_context", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(20);
 
     return NextResponse.json({
       memory: parent.current_user_context || "",

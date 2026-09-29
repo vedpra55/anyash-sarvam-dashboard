@@ -22,6 +22,8 @@ import { getParentStatus, isConnected } from "@/lib/attention";
 import { parseMemory } from "@/lib/memory";
 import { formatPhone } from "@/lib/languages";
 import { SarvamCallRecord } from "@/lib/sarvam";
+import { useMarkDone, prefetchCall, memoryQuery } from "@/lib/queries";
+import { useQueryClient } from "@tanstack/react-query";
 
 export type DetailSubTab = "overview" | "calls" | "memory" | "profile";
 
@@ -29,7 +31,6 @@ interface ParentDetailCanvasProps {
   parent: ParentItem | null;
   onCallNow: (parent: ParentItem) => void;
   onEditClick: (parent: ParentItem) => void;
-  onChanged?: () => void;
   isCalling?: boolean;
   backHref?: string;
 }
@@ -41,12 +42,12 @@ function toList(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function CallRow({ call, onOpen }: { call: any; onOpen: () => void }) {
+function CallRow({ call, onOpen, onIntent }: { call: any; onOpen: () => void; onIntent: () => void }) {
   const status = callStatusMeta(call.call_status);
   const when = new Date(call.created_at);
   return (
     <li>
-      <button onClick={onOpen} className="w-full grid grid-cols-[112px_1fr_16px] sm:grid-cols-[140px_1fr_16px] gap-x-4 sm:gap-x-6 py-4 text-left group">
+      <button onClick={onOpen} onMouseEnter={onIntent} onFocus={onIntent} className="w-full grid grid-cols-[112px_1fr_16px] sm:grid-cols-[140px_1fr_16px] gap-x-4 sm:gap-x-6 py-4 text-left group">
         <div>
           <div className="text-[13px] text-zinc-200">
             {when.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
@@ -76,18 +77,20 @@ export function ParentDetailCanvas({
   parent,
   onCallNow,
   onEditClick,
-  onChanged,
   isCalling = false,
   backHref,
 }: ParentDetailCanvasProps) {
   const [activeTab, setActiveTab] = useState<DetailSubTab>("overview");
   const [drawerCall, setDrawerCall] = useState<SarvamCallRecord | null>(null);
-  const [marking, setMarking] = useState(false);
+  const markDoneMutation = useMarkDone();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     setActiveTab("overview");
     setDrawerCall(null);
-  }, [parent?.id]);
+    // Warm the Memory tab so opening it is instant.
+    if (parent?.id) queryClient.prefetchQuery(memoryQuery(parent.id));
+  }, [parent?.id, queryClient]);
 
   const status = useMemo(() => (parent ? getParentStatus(parent) : null), [parent]);
   const watchlist = useMemo(() => parseMemory(parent?.current_user_context).watchlist, [parent?.current_user_context]);
@@ -117,19 +120,8 @@ export function ParentDetailCanvas({
   const medications = toList(parent.medical_baseline?.medications);
   const routines = (parent.routines || []).filter((r: any) => r?.activity);
 
-  const markDone = async () => {
-    if (!status.cardId) return;
-    setMarking(true);
-    try {
-      const res = await fetch(`/api/decisions/${status.cardId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action_completed: true }),
-      });
-      if (res.ok) onChanged?.();
-    } finally {
-      setMarking(false);
-    }
+  const markDone = () => {
+    if (status.cardId) markDoneMutation.mutate(status.cardId);
   };
 
   const openByAttempt = (attemptId: string) => {
@@ -212,7 +204,7 @@ export function ParentDetailCanvas({
                   )}
                 </div>
                 {status.cardId && status.needsAttention && (
-                  <Button size="sm" variant="ghost" onClick={markDone} disabled={marking}>
+                  <Button size="sm" variant="ghost" onClick={markDone} disabled={markDoneMutation.isPending}>
                     Mark done
                   </Button>
                 )}
@@ -292,7 +284,12 @@ export function ParentDetailCanvas({
             ) : (
               <ul className="divide-y divide-ay-line">
                 {calls.map((call: any, idx: number) => (
-                  <CallRow key={call.id || idx} call={call} onOpen={() => setDrawerCall(call)} />
+                  <CallRow
+                    key={call.id || idx}
+                    call={call}
+                    onOpen={() => setDrawerCall(call)}
+                    onIntent={() => prefetchCall(queryClient, call)}
+                  />
                 ))}
               </ul>
             )}
@@ -306,7 +303,6 @@ export function ParentDetailCanvas({
               parentId={parent.id}
               parentName={parent.parent_name}
               onOpenCall={openByAttempt}
-              onSaved={() => onChanged?.()}
             />
           </div>
         )}

@@ -4,7 +4,8 @@ import { getServiceSupabase } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 /** Marks a decision card's follow-up as done (or not done). */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   try {
     const body = await req.json();
     if (typeof body.action_completed !== "boolean") {
@@ -14,7 +15,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const { data, error } = await getServiceSupabase()
       .from("decision_cards")
       .update({ action_completed: body.action_completed, updated_at: new Date().toISOString() })
-      .eq("id", params.id)
+      .eq("id", id)
       .select("id, action_completed")
       .maybeSingle();
 

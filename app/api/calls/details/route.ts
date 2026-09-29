@@ -31,33 +31,28 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ record: null, decisionCard: null, dailyLog: null });
     }
 
-    const { data: decisionCard } = await supabase
-      .from("decision_cards")
-      .select("decision, urgency, why, next_action, next_follow_up_date, action_completed")
-      .eq("attempt_id", attemptId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // Prefer the log written for this call; otherwise that parent's log for the call's day.
-    let dailyLog: any = null;
-    const { data: linkedLog } = await supabase
-      .from("daily_health_logs")
-      .select("*")
-      .eq("call_id", record.id)
-      .maybeSingle();
-    dailyLog = linkedLog;
-
-    if (!dailyLog && record.parent_id && record.created_at) {
-      const logDate = new Date(record.created_at).toISOString().split("T")[0];
-      const { data: dayLog } = await supabase
-        .from("daily_health_logs")
-        .select("*")
-        .eq("parent_id", record.parent_id)
-        .eq("log_date", logDate)
-        .maybeSingle();
-      dailyLog = dayLog;
-    }
+    // Decision card, the log written for this call, and that parent's log for the
+    // call's day all load in parallel; the linked log wins over the day's log.
+    const logDate = record.created_at ? new Date(record.created_at).toISOString().split("T")[0] : null;
+    const [{ data: decisionCard }, { data: linkedLog }, { data: dayLog }] = await Promise.all([
+      supabase
+        .from("decision_cards")
+        .select("decision, urgency, why, next_action, next_follow_up_date, action_completed")
+        .eq("attempt_id", attemptId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from("daily_health_logs").select("*").eq("call_id", record.id).maybeSingle(),
+      record.parent_id && logDate
+        ? supabase
+            .from("daily_health_logs")
+            .select("*")
+            .eq("parent_id", record.parent_id)
+            .eq("log_date", logDate)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    const dailyLog = linkedLog || dayLog || null;
 
     return NextResponse.json({ record, decisionCard: decisionCard || null, dailyLog });
   } catch (err: any) {

@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useMemory, useSaveMemory } from "@/lib/queries";
+import { TextSkeleton } from "./Skeletons";
 import { ChevronRight } from "lucide-react";
 import { parseMemory, diffMemory, isEmptyMemory } from "@/lib/memory";
 import {
@@ -76,40 +78,22 @@ function HistoryRow({
 }
 
 export function MemoryPanel({ parentId, parentName, onOpenCall, onSaved }: MemoryPanelProps) {
-  const [memory, setMemory] = useState("");
-  const [numberOfCalls, setNumberOfCalls] = useState<number | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [history, setHistory] = useState<MemoryHistoryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const query = useMemory(parentId);
+  const saveMutation = useSaveMemory(parentId);
+
+  const memory: string = query.data?.memory || "";
+  const numberOfCalls: number | null = query.data?.numberOfCalls ?? null;
+  const updatedAt: string | null = query.data?.lastCallAt || query.data?.updatedAt || null;
+  const history: MemoryHistoryItem[] = query.data?.history || [];
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError("");
-    try {
-      const res = await fetch(`/api/parents/${parentId}/memory`, { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load memory");
-      setMemory(data.memory || "");
-      setNumberOfCalls(data.numberOfCalls ?? null);
-      setUpdatedAt(data.lastCallAt || data.updatedAt || null);
-      setHistory(data.history || []);
-    } catch (err: any) {
-      setLoadError(err.message || "Failed to load memory");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [parentId]);
+  const isSaving = saveMutation.isPending;
 
   useEffect(() => {
     setIsEditing(false);
-    load();
-  }, [load]);
+  }, [parentId]);
 
   const parsed = useMemo(() => parseMemory(memory), [memory]);
   const firstName = parentName.split(" ")[0];
@@ -120,43 +104,36 @@ export function MemoryPanel({ parentId, parentName, onOpenCall, onSaved }: Memor
     setIsEditing(true);
   };
 
-  const save = async () => {
+  const save = () => {
     if (!draft.trim()) {
       setSaveError("Memory can't be empty.");
       return;
     }
-    setIsSaving(true);
     setSaveError("");
-    try {
-      const res = await fetch(`/api/parents/${parentId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ current_user_context: draft.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save");
-      const saved = data.parent?.current_user_context ?? draft.trim();
-      setMemory(saved);
-      setUpdatedAt(data.parent?.updated_at || new Date().toISOString());
-      setIsEditing(false);
-      onSaved?.(saved);
-    } catch (err: any) {
-      setSaveError(err.message || "Failed to save");
-    } finally {
-      setIsSaving(false);
-    }
+    saveMutation.mutate(draft.trim(), {
+      onSuccess: (data) => {
+        setIsEditing(false);
+        onSaved?.(data.parent?.current_user_context ?? draft.trim());
+      },
+      onError: (err) => setSaveError(err.message || "Failed to save"),
+    });
   };
 
-  if (isLoading) {
-    return <p className="text-[13px] text-zinc-600">Loading memory…</p>;
+  if (query.isPending) {
+    return (
+      <div className="max-w-[760px] space-y-8">
+        <TextSkeleton lines={2} label="Loading memory" />
+        <TextSkeleton lines={5} label="Loading memory" />
+      </div>
+    );
   }
 
-  if (loadError) {
+  if (query.isError && !query.data) {
     return (
       <div>
         <p className="text-[14px] text-zinc-300">Couldn&apos;t load Anya&apos;s memory.</p>
-        <p className="text-[13px] text-zinc-500 mt-1">{loadError}</p>
-        <button onClick={load} className="mt-3 text-[13px] text-zinc-300 hover:text-white">
+        <p className="text-[13px] text-zinc-500 mt-1">{query.error.message}</p>
+        <button onClick={() => query.refetch()} className="mt-3 text-[13px] text-zinc-300 hover:text-white">
           Try again
         </button>
       </div>

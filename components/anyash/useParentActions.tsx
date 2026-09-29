@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAll } from "@/lib/queries";
 import { ParentItem } from "./ParentsListColumn";
 import { ParentFormModal } from "./ParentFormModal";
 import { CallModal } from "./CallModal";
@@ -11,14 +13,14 @@ import { Modal, Button, Toast, ToastMessage } from "./primitives";
  * and toast. Render `actions.ui` once in the page.
  */
 export function useParentActions({
-  onChanged,
   onAdded,
   onDeleted,
 }: {
-  onChanged: () => void;
   onAdded?: (parent: ParentItem) => void;
   onDeleted?: (parentId: string) => void;
-}) {
+} = {}) {
+  const queryClient = useQueryClient();
+  const onChanged = useCallback(() => invalidateAll(queryClient), [queryClient]);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ParentItem | null>(null);
@@ -64,7 +66,8 @@ export function useParentActions({
             ? "Test mode: telephony isn't configured, so no real call was placed."
             : `Calling ${name} in ${payload.customLanguage}. The summary appears here a minute after the call ends.`,
       });
-      // The review lands after the call ends; refresh a couple of times.
+      // Show the new attempt right away; the review lands after the call ends.
+      onChanged();
       setTimeout(onChanged, 20000);
       setTimeout(onChanged, 90000);
     } catch (err: any) {

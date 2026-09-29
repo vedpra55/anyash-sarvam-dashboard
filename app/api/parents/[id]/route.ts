@@ -5,10 +5,11 @@ export const dynamic = "force-dynamic";
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const parentId = params.id;
+    const parentId = id;
     if (!parentId) {
       return NextResponse.json({ error: "Parent ID is required" }, { status: 400 });
     }
@@ -83,10 +84,11 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
-    const parentId = params.id;
+    const parentId = id;
     if (!parentId) {
       return NextResponse.json({ error: "Parent ID is required" }, { status: 400 });
     }

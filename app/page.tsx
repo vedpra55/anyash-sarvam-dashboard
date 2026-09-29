@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import Link from "next/link";
 import { Phone, ChevronRight } from "lucide-react";
-import { AppShell } from "@/components/anyash/Sidebar";
 import { ParentItem } from "@/components/anyash/ParentsListColumn";
 import { useParents } from "@/components/anyash/useParents";
 import { useParentActions } from "@/components/anyash/useParentActions";
-import { Button, EmptyState, LoadingText } from "@/components/anyash/primitives";
+import { Button, EmptyState } from "@/components/anyash/primitives";
+import { TodaySkeleton } from "@/components/anyash/Skeletons";
+import { useMarkDone } from "@/lib/queries";
 import { Dot, humanize } from "@/components/anyash/detail-ui";
 import { getParentStatus, isConnected, ParentStatus } from "@/lib/attention";
 
@@ -71,9 +72,9 @@ function AttentionRow({
 }
 
 export default function TodayPage() {
-  const { parents, loading, error, reload } = useParents();
-  const actions = useParentActions({ onChanged: reload });
-  const [markingId, setMarkingId] = useState<string | null>(null);
+  const { parents, loading, error, refreshError, reload } = useParents();
+  const actions = useParentActions();
+  const markDone = useMarkDone();
 
   const rows = useMemo(() => {
     const now = new Date();
@@ -89,33 +90,19 @@ export default function TodayPage() {
     0
   );
 
-  const markDone = async (cardId: string) => {
-    setMarkingId(cardId);
-    try {
-      const res = await fetch(`/api/decisions/${cardId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action_completed: true }),
-      });
-      if (res.ok) await reload();
-    } finally {
-      setMarkingId(null);
-    }
-  };
-
   const dateLabel = new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
 
   return (
-    <AppShell>
+    <>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[880px] mx-auto px-5 sm:px-10 py-8 sm:py-12">
           <p className="text-[13px] text-zinc-500">{dateLabel}</p>
           <h1 className="text-[26px] font-semibold text-white tracking-tight mt-1">Today</h1>
 
           {loading ? (
-            <LoadingText />
+            <TodaySkeleton />
           ) : error ? (
-            <EmptyState title="Couldn't load today's data." action={<Button size="sm" onClick={reload}>Try again</Button>}>
+            <EmptyState title="Couldn't load today's data." action={<Button size="sm" onClick={() => reload()}>Try again</Button>}>
               {error}
             </EmptyState>
           ) : parents.length === 0 ? (
@@ -127,6 +114,9 @@ export default function TodayPage() {
             </EmptyState>
           ) : (
             <>
+              {refreshError && (
+                <p className="mt-2 text-[12.5px] text-amber-200/80">Couldn&apos;t refresh just now; showing the last loaded data.</p>
+              )}
               <p className="mt-3 text-[14px] text-zinc-400">
                 <span className="text-white tabular-nums">{checkedIn}</span> of {parents.length} checked in
                 <span className="text-zinc-700 mx-2">·</span>
@@ -149,9 +139,9 @@ export default function TodayPage() {
                         key={parent.id}
                         parent={parent}
                         status={status}
-                        busy={markingId === status.cardId}
+                        busy={markDone.isPending && markDone.variables === status.cardId}
                         onCall={() => actions.openCall(parent)}
-                        onDone={status.cardId ? () => markDone(status.cardId!) : undefined}
+                        onDone={status.cardId ? () => markDone.mutate(status.cardId!) : undefined}
                       />
                     ))}
                   </ul>
@@ -211,6 +201,6 @@ export default function TodayPage() {
         </div>
       </div>
       {actions.ui}
-    </AppShell>
+    </>
   );
 }

@@ -2,13 +2,30 @@
 
 import React, { Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AppShell } from "@/components/anyash/Sidebar";
 import { ParentsListColumn } from "@/components/anyash/ParentsListColumn";
 import { ParentDetailCanvas } from "@/components/anyash/ParentDetailCanvas";
 import { useParents } from "@/components/anyash/useParents";
 import { useParentActions } from "@/components/anyash/useParentActions";
-import { Button, EmptyState, LoadingText } from "@/components/anyash/primitives";
+import { Button, EmptyState } from "@/components/anyash/primitives";
+import { ParentListSkeleton, ParentDetailSkeleton, Bone } from "@/components/anyash/Skeletons";
 import { getParentStatus } from "@/lib/attention";
+
+function LoadingView({ withDetail }: { withDetail: boolean }) {
+  return (
+    <>
+      <div className={`w-full lg:w-[320px] shrink-0 lg:border-r border-ay-line pt-6 ${withDetail ? "hidden lg:block" : ""}`}>
+        <div className="px-5 pb-5 flex items-center justify-between">
+          <h1 className="text-[20px] font-semibold text-white tracking-tight">Parents</h1>
+          <Bone className="h-8 w-16 rounded-full" />
+        </div>
+        <ParentListSkeleton />
+      </div>
+      <div className={`flex-1 min-w-0 ${withDetail ? "block" : "hidden lg:block"}`}>
+        <ParentDetailSkeleton />
+      </div>
+    </>
+  );
+}
 
 function ParentsView() {
   const router = useRouter();
@@ -18,7 +35,6 @@ function ParentsView() {
   const select = (id: string | null) => router.replace(id ? `/parents?id=${id}` : "/parents", { scroll: false });
 
   const actions = useParentActions({
-    onChanged: reload,
     onAdded: (p) => select(p.id),
     onDeleted: (id) => id === selectedId && select(null),
   });
@@ -31,18 +47,12 @@ function ParentsView() {
   const selected = parents.find((p) => p.id === selectedId) || null;
   const shown = selected || fallback;
 
-  if (loading) {
-    return (
-      <div className="px-10">
-        <LoadingText />
-      </div>
-    );
-  }
+  if (loading) return <LoadingView withDetail={Boolean(selectedId)} />;
 
   if (error) {
     return (
       <div className="px-5 sm:px-10">
-        <EmptyState title="Couldn't load parents." action={<Button size="sm" onClick={reload}>Try again</Button>}>
+        <EmptyState title="Couldn't load parents." action={<Button size="sm" onClick={() => reload()}>Try again</Button>}>
           {error}
         </EmptyState>
       </div>
@@ -63,7 +73,6 @@ function ParentsView() {
           parent={shown}
           onCallNow={actions.openCall}
           onEditClick={actions.openEdit}
-          onChanged={reload}
           isCalling={actions.isCalling}
           backHref="/parents"
         />
@@ -75,10 +84,8 @@ function ParentsView() {
 
 export default function ParentsPage() {
   return (
-    <AppShell>
-      <Suspense fallback={null}>
-        <ParentsView />
-      </Suspense>
-    </AppShell>
+    <Suspense fallback={<LoadingView withDetail={false} />}>
+      <ParentsView />
+    </Suspense>
   );
 }

@@ -43,21 +43,41 @@ export function isTestCall(item: any): boolean {
   return false;
 }
 
-export async function fetchSarvamCalls(options?: {
-  daysBack?: number;
-  limit?: number;
-}): Promise<SarvamCallRecord[]> {
+export type SarvamAttemptsResult =
+  | { ok: true; items: any[] }
+  | { ok: false; status: number; error: string };
+
+const ATTEMPTS_TTL_MS = 15_000;
+let attemptsCache: { at: number; promise: Promise<SarvamAttemptsResult> } | null = null;
+
+/**
+ * Raw call attempts from Sarvam Analytics since 25 Sep 2026 (intentional cutoff).
+ *
+ * /api/parents and /api/calls both need this list, often at the same moment, so
+ * one request is shared: concurrent callers reuse the in-flight fetch and the
+ * result is reused for 15 seconds. Failures are not cached.
+ */
+export function getSarvamAttempts(limit = 100): Promise<SarvamAttemptsResult> {
+  if (attemptsCache && Date.now() - attemptsCache.at < ATTEMPTS_TTL_MS) {
+    return attemptsCache.promise;
+  }
+  const promise = fetchSarvamAttempts(limit).then((result) => {
+    if (!result.ok && attemptsCache?.promise === promise) attemptsCache = null;
+    return result;
+  });
+  attemptsCache = { at: Date.now(), promise };
+  return promise;
+}
+
+async function fetchSarvamAttempts(limit: number): Promise<SarvamAttemptsResult> {
   const apiKey = process.env.SARVAM_API_KEY || "";
   const orgId = process.env.SARVAM_ORG_ID || "";
   const workspaceId = process.env.SARVAM_WORKSPACE_ID || "";
   const appId = process.env.SARVAM_APP_ID || "";
 
   if (!apiKey || !orgId || !workspaceId || !appId) {
-    console.warn("Sarvam API credentials missing in environment variables.");
-    return [];
+    return { ok: false, status: 500, error: "Sarvam environment variables not configured" };
   }
-
-  const limit = options?.limit ?? 100;
 
   // Strictly fetch only calls on or after 25 Sep 2026
   const startIso = "2026-09-25T00:00:00.000Z";
@@ -70,7 +90,7 @@ export async function fetchSarvamCalls(options?: {
   )}&end_datetime=${encodeURIComponent(endIso)}&limit=${limit}`;
 
   try {
-    const sarvamRes = await fetch(attemptsUrl, {
+    const res = await fetch(attemptsUrl, {
       method: "GET",
       headers: {
         "X-API-Key": apiKey.trim(),
@@ -78,15 +98,31 @@ export async function fetchSarvamCalls(options?: {
       },
       cache: "no-store",
     });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Sarvam attempts API returned ${res.status}:`, errText);
+      return { ok: false, status: res.status, error: `Sarvam API error (${res.status}): ${errText}` };
+    }
+    const data = await res.json();
+    return { ok: true, items: data.items || [] };
+  } catch (err: any) {
+    console.error("Failed to query Sarvam attempts API:", err);
+    return { ok: false, status: 502, error: err?.message || "Could not reach Sarvam" };
+  }
+}
 
-    if (!sarvamRes.ok) {
-      const errText = await sarvamRes.text();
-      console.error(`Sarvam attempts API returned ${sarvamRes.status}:`, errText);
+export async function fetchSarvamCalls(options?: {
+  daysBack?: number;
+  limit?: number;
+}): Promise<SarvamCallRecord[]> {
+  try {
+    const result = await getSarvamAttempts(options?.limit ?? 100);
+    if (!result.ok) {
+      console.warn("Sarvam calls unavailable:", result.error);
       return [];
     }
 
-    const data = await sarvamRes.json();
-    const rawItems: any[] = data.items || [];
+    const rawItems: any[] = result.items;
     const minTimestamp = new Date("2026-09-25T00:00:00Z").getTime();
 
     // Filter to legitimate parent phone calls starting strictly from 25 Sep 2026
@@ -128,7 +164,7 @@ export async function fetchSarvamCalls(options?: {
         conversation_signal: agentVars.conversation_signal || undefined,
         follow_up_needed: agentVars.follow_up_needed || undefined,
         follow_up_detail: agentVars.follow_up_detail || undefined,
-        parent_mood: agentVars.parent_mood || agentVars.conversation_signal || undefined,
+        parent_mood: agentVars.parent_mood || undefined,
         mood_note: agentVars.mood_note || undefined,
         ongoing_health_context: agentVars.ongoing_health_context || undefined,
         personal_context: agentVars.personal_context || undefined,
