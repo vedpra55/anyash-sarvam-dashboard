@@ -1,19 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import { getSarvamAttempts } from "@/lib/sarvam";
+import { getSarvamAttempts, attemptIdOf } from "@/lib/sarvam";
+import { testReason, attemptTime, last10 } from "@/lib/trial";
 
 export const dynamic = "force-dynamic";
-
-function isTestCall(item: any) {
-  const contact = item.user_contact || item.user_contact_masked || "";
-  const name = (item.agent_variables?.parent_name || "").toLowerCase();
-  // Filter dummy numbers (9876543210), web tests (@), or calls labeled "Test"
-  if (contact.includes("@")) return true;
-  if (contact.includes("9876543210")) return true;
-  if (name === "test") return true;
-  if (item.is_debug_call === 1) return true;
-  return false;
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,7 +16,7 @@ export async function GET(req: NextRequest) {
           return { data: null };
         }
       ),
-      getSarvamAttempts(100),
+      getSarvamAttempts(),
     ]);
 
     if (!attempts.ok) {
@@ -49,25 +39,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const rawItems: any[] = attempts.items;
-    const minTimestamp = new Date("2026-09-25T00:00:00Z").getTime();
-
-    // Filter to legitimate parent phone calls starting strictly from 25 Sep 2026
-    const phoneCalls = rawItems.filter((item: any) => {
-      if (item.channel_direction !== "outbound") return false;
-      if (isTestCall(item)) return false;
-      const callTime = new Date(item.attempted_at || item.start_datetime || "").getTime();
-      if (!isNaN(callTime) && callTime < minTimestamp) return false;
-      return true;
-    });
-
-    // Sort newest first by UTC timestamp
-    phoneCalls.sort((a, b) => {
-      const getUtc = (dStr: string) => new Date(dStr ? (dStr.endsWith("Z") ? dStr : dStr + "Z") : 0).getTime();
-      const timeA = getUtc(a.attempted_at || a.start_datetime);
-      const timeB = getUtc(b.attempted_at || b.start_datetime);
-      return timeB - timeA;
-    });
+    // Real trial calls only (the shared rule in lib/trial.ts). Calls to numbers that
+    // aren't a parent are only excluded when the parent list actually loaded.
+    const parentNumbers = parentsResult.data
+      ? new Set<string>(parentsResult.data.map((p: any) => last10(p.phone_number)).filter(Boolean))
+      : undefined;
+    const phoneCalls = attempts.items
+      .filter((item: any) => testReason(item, parentNumbers) === null)
+      .sort((a: any, b: any) => attemptTime(b) - attemptTime(a));
 
     // Normalize into clean CallItem structure
     const calls = phoneCalls.map((item: any) => {
@@ -88,13 +67,12 @@ export async function GET(req: NextRequest) {
 
       const childName = agentVars.child_name || matchedProfile?.child_name || "Family";
 
-      // Ensure timestamp has UTC 'Z' indicator so browser converts to local IST time correctly
-      const rawTimestamp = item.attempted_at || item.start_datetime || new Date().toISOString();
-      const createdAt = rawTimestamp.endsWith("Z") ? rawTimestamp : rawTimestamp + "Z";
+      const t = attemptTime(item);
+      const createdAt = new Date(isNaN(t) ? Date.now() : t).toISOString();
 
       return {
-        id: item.attempt_id,
-        attempt_id: item.attempt_id,
+        id: attemptIdOf(item),
+        attempt_id: attemptIdOf(item),
         interaction_id: item.interaction_id !== "NO_INTERACTION_ID" ? item.interaction_id : undefined,
         parent_name: parentName,
         parent_phone: userPhone,
@@ -117,6 +95,8 @@ export async function GET(req: NextRequest) {
         num_messages: item.num_messages || 0,
         has_recording: item.interaction_id && item.interaction_id !== "NO_INTERACTION_ID" && (item.duration_in_seconds || 0) > 0,
         audio_url: item.audio_url || undefined,
+        end_reason: item.end_reason && item.end_reason !== "NO_END_REASON" ? item.end_reason : undefined,
+        goal_status: item.evaluation?.overall_status || undefined,
       };
     });
 

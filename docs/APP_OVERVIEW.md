@@ -108,6 +108,50 @@ File: `app/calls/page.tsx`
 - **Call drawer** (`CallDetailDrawer.tsx`): Summary (AI assessment, health
   log, mood), Conversation, Memory (what changed on this call).
 
+### `/insights` — Insights
+Files: `app/insights/page.tsx`, `lib/insights.ts` (pure calculations),
+`app/api/insights/route.ts` (data), `components/anyash/charts.tsx`.
+
+Real trial calls only (see *Trial and test calls* below), for the last 7
+days, 30 days or the whole trial, compared with the previous period when
+that period is also inside the trial.
+
+- **What the data says:** up to 6 findings written from the numbers, things
+  to fix first (calls cut off by the time limit, calls under 30 s and when
+  they happen, parents with few real conversations), then what works.
+  Needs at least 5 calls.
+- **Headline:** daily check-in coverage (parent-days with a call that met
+  the goal, over completed days), goal met (Sarvam evaluation
+  `overall_status`, falls back to `call_outcome`), picked up, typical call.
+- **Charts:** calls per day, funnel (dialled → connected → conversation of
+  4+ turns → goal met → health captured), how calls end (`end_reason`),
+  turns by call number, calls by hour (India time), evaluation criteria,
+  openness, mood, topics covered in daily health logs, follow-ups.
+  Every chart has a hover/focus tooltip and a Table view.
+- **Where calls stall:** connected calls under 30 s with Anya's last line
+  from the Sarvam transcript and whether the parent spoke.
+- **Per parent:** calls, goal met, typical length, turns trend, last call
+  and a flag (getting shorter / often no real conversation / every call met
+  the goal).
+- **Speed and cost:** Anya's and the parent's reply time (Sarvam
+  averages; 0 means not measured and is skipped), minutes and an estimate
+  (₹4.5 per started minute + ₹0.4 per 30 s telephony).
+- Footnote lists how many test calls were left out and why.
+
+`/api/insights` builds a call ledger from Sarvam attempts (all pages since
+the trial start), parents, `call_records`, `daily_health_logs` and
+`decision_cards`; kept for 60 s on the server and 5 min in the client.
+
+### Trial and test calls
+`lib/trial.ts` — used by `/api/calls`, `/api/parents` and `/api/insights`.
+- The trial starts **25 Sep 2026 00:00 India time** (`2026-09-24T18:30Z`);
+  anything earlier is left out. Sarvam times without a zone are UTC.
+- A call is a test and left out if it is: a web/playground session
+  (contact is an email), marked debug in Sarvam, inbound, to a placeholder
+  number (9876543210, 1234567890), for a parent named "Test", with outcome
+  `test_call`, or (when the parent list is known) to a number that isn't a
+  parent.
+
 ### Settings
 Sidebar → Settings: Sarvam agent version (`AgentSettingsModal.tsx`).
 
@@ -149,6 +193,7 @@ TanStack Query 5.
 | `/api/parents/[id]` | PATCH | Update parent fields; keeps the initial 2-line context in sync with names |
 | `/api/parents/[id]` | DELETE | Deletes daily logs, call records, decision cards, then the parent |
 | `/api/calls/outbound` | POST | Resolves/creates the Supabase profile, syncs call count & context, calls Sarvam Outbound API. Falls back to a **simulated** attempt if telephony env vars are missing |
+| `/api/insights` | GET | Trial call ledger for Insights: Sarvam attempts + evaluations joined with Supabase reviews, logs and follow-ups; test calls counted by reason |
 | `/api/calls` | GET | Sarvam Analytics attempts (outbound, non-test, since 25 Sep 2026), normalised, name-matched to parents, with the AI verdict from `call_records` |
 | `/api/calls/transcript` | GET | Transcript by `interaction_id` from Sarvam; falls back to `call_records.transcript` |
 | `/api/calls/recording` | GET | Streams the call audio from Sarvam |
@@ -294,7 +339,9 @@ the version → Save. It is stored in Supabase `app_settings`
 (`key = sarvam_app_version`). Outbound calls use: saved setting →
 `SARVAM_APP_VERSION` env → 12.
 
-Scripts: `npm run dev`, `npm run build`, `npm start`, `npm run typecheck`.
+Scripts: `npm run dev`, `npm run build`, `npm start`, `npm run typecheck`,
+`npm test` (Insights calculations and the test-call rule, checked against
+the real trial calls in `tests/insights.test.ts`).
 Node 20.9 or newer (required by Next.js 16).
 
 ---

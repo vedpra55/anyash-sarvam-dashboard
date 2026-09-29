@@ -36,6 +36,7 @@ export const keys = {
     ["call", attemptId, "transcript", interactionId || ""] as const,
   memory: (parentId: string) => ["parent", parentId, "memory"] as const,
   settings: ["settings"] as const,
+  insights: ["insights"] as const,
 };
 
 /* ------------------------------------------------------------------ */
@@ -53,6 +54,14 @@ export const callsQuery = {
   queryKey: keys.calls,
   queryFn: () => fetchJson<{ calls: any[] }>("/api/calls").then((d) => d.calls || []),
   refetchInterval: 60_000,
+};
+
+/** The trial call ledger for Insights; heavy, so it refreshes less often. */
+export const insightsQuery = {
+  queryKey: keys.insights,
+  queryFn: () => fetchJson<import("./insights").Ledger>("/api/insights"),
+  staleTime: 5 * 60_000,
+  refetchInterval: 5 * 60_000,
 };
 
 export interface TranscriptTurn {

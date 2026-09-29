@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Sun, Users, Phone, Settings } from "lucide-react";
+import { Sun, Users, Phone, Settings, BarChart3 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AgentSettingsModal } from "./AgentSettingsModal";
@@ -12,6 +12,7 @@ const NAV = [
   { href: "/", label: "Today", icon: Sun },
   { href: "/parents", label: "Parents", icon: Users },
   { href: "/calls", label: "Calls", icon: Phone },
+  { href: "/insights", label: "Insights", icon: BarChart3 },
 ];
 
 function isActive(pathname: string | null, href: string) {
