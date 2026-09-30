@@ -4,6 +4,7 @@
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { recordCallAssessment } from "../lib/postcall.ts";
+import { istDateLabel, istIsoDate } from "../lib/call.ts";
 
 type Row = Record<string, any>;
 
@@ -127,7 +128,6 @@ Deno.test("real call without AI: count goes up, memory kept but re-stamped, one 
       call_summary: "Talked about sleep and the heat.",
       personal_context: "Lives with daughter-in-law.",
       call_duration_seconds: "132",
-      interaction_start_time: "2026-09-30 13:00:00",
       interaction_transcript: transcript(6),
     },
     "",
@@ -138,10 +138,10 @@ Deno.test("real call without AI: count goes up, memory kept but re-stamped, one 
   assertEquals(profile.number_of_calls, 5);
   assertEquals(
     profile.current_user_context,
-    "LAST UPDATED: Wed, 30 Sep 2026 | CALL COUNT: 5\nBASELINE: Salilesh | Child: Jaya\nACTIVE WATCHLIST:\n- sleep aid",
+    `LAST UPDATED: ${istDateLabel(new Date())} | CALL COUNT: 5\nBASELINE: Salilesh | Child: Jaya\nACTIVE WATCHLIST:\n- sleep aid`,
   );
   assertEquals(w.tables.daily_health_logs.length, 1);
-  assertEquals(w.tables.daily_health_logs[0].log_date, "2026-09-30");
+  assertEquals(w.tables.daily_health_logs[0].log_date, istIsoDate(new Date()));
   assertEquals(w.tables.decision_cards.length, 1);
   assertEquals(w.tables.decision_cards[0].profile_id, PARENT_ID);
   const rec = w.tables.call_records[0];

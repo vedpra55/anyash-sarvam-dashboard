@@ -1,6 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
-  callTime,
   classifyCall,
   countParentTurns,
   isLegacyPayload,
@@ -67,6 +66,22 @@ Deno.test("empty turns are dropped and assistant maps to agent", () => {
   assertEquals(t, [{ role: "agent", text: "hi" }]);
 });
 
+Deno.test("transcript as the on_end system variable really sends it (wrapped object)", () => {
+  const wrapped = {
+    app_id: "Anyash-Heal-91a5077a-a5b2",
+    app_version: 29,
+    interaction_transcript: [
+      { role: "agent", en_text: "Hello Poonam ji", indic_text: "नमस्ते Poonam जी" },
+      { role: "user", en_text: "Yes.", indic_text: "हाँ।" },
+      { role: "agent", en_text: "Has the electricity come back?" },
+      { role: "user", en_text: "Yes, at night." },
+      { role: "user", en_text: "No, my appetite has returned." },
+    ],
+  };
+  assertEquals(countParentTurns(normalizeTranscript({ interaction_transcript: wrapped })), 3);
+  assertEquals(countParentTurns(normalizeTranscript({ interaction_transcript: JSON.stringify(wrapped) })), 3);
+});
+
 Deno.test("no transcript at all", () => {
   assertEquals(normalizeTranscript({ call_outcome: "meaningful_checkin" }), []);
 });
@@ -123,12 +138,6 @@ Deno.test("IST date: 11:59 PM IST stays on the same India day", () => {
 Deno.test("IST date: 00:30 IST is the next India day", () => {
   const d = new Date("2026-09-30T19:00:00Z"); // 00:30 IST on 1 Oct
   assertEquals(istIsoDate(d), "2026-10-01");
-});
-
-Deno.test("call time comes from interaction_start_time when present", () => {
-  const now = new Date("2026-10-02T00:00:00Z");
-  assertEquals(callTime({ interaction_start_time: "2026-09-30 16:10:00" }, now).toISOString(), "2026-09-30T16:10:00.000Z");
-  assertEquals(callTime({}, now), now);
 });
 
 // ---- memory ----------------------------------------------------------------

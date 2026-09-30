@@ -62,9 +62,22 @@ function parseTextTranscript(text: string): TranscriptTurn[] {
   return turns;
 }
 
+/**
+ * The on_end system variable wraps the turns:
+ * { app_id, app_version, interaction_transcript: [{ role, en_text, indic_text }] }.
+ */
+function unwrapTurns(value: unknown): unknown {
+  let current = parseMaybeJson(value);
+  for (let depth = 0; depth < 3 && current && typeof current === "object" && !Array.isArray(current); depth++) {
+    const obj = current as Record<string, unknown>;
+    current = parseMaybeJson(obj.interaction_transcript ?? obj.transcript ?? obj.turns ?? obj.messages);
+  }
+  return current;
+}
+
 /** Accepts every transcript shape seen from Sarvam and returns clean turns. */
 export function normalizeTranscript(body: Record<string, any>): TranscriptTurn[] {
-  const source = parseMaybeJson(body.interaction_transcript ?? body.transcript ?? body.messages);
+  const source = unwrapTurns(body.interaction_transcript ?? body.transcript ?? body.messages);
 
   if (typeof source === "string") return parseTextTranscript(source);
   if (!Array.isArray(source)) return [];
@@ -97,7 +110,8 @@ function toEpochMs(value: unknown): number | null {
   if (typeof value === "number") return value > 1e12 ? value : value * 1000;
   const asNumber = Number(value);
   if (Number.isFinite(asNumber)) return asNumber > 1e12 ? asNumber : asNumber * 1000;
-  // Sarvam times without a zone are UTC.
+  // Only differences between two times are used, so a zoneless value is read
+  // as UTC consistently (Sarvam's runtime times are India time without a zone).
   const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(String(value)) ? String(value) : `${value}Z`;
   const ms = Date.parse(iso.replace(" ", "T"));
   return Number.isFinite(ms) ? ms : null;
@@ -191,12 +205,6 @@ export function classifyCall(input: {
 const IST_OFFSET_MS = 5.5 * 3600_000;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** The call's start time if Sarvam sent it, otherwise now. */
-export function callTime(body: Record<string, any>, now: Date = new Date()): Date {
-  const ms = toEpochMs(body.interaction_start_time);
-  return ms === null ? now : new Date(ms);
-}
 
 /** "2026-09-30" in India time, for daily_health_logs.log_date. */
 export function istIsoDate(date: Date): string {

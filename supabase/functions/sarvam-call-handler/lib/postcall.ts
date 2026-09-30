@@ -7,7 +7,6 @@
  */
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import {
-  callTime,
   classifyCall,
   countParentTurns,
   countWords,
@@ -204,8 +203,9 @@ export async function recordCallAssessment(
     };
   }
 
-  // A real call: consolidate memory and write everything.
-  const when = callTime(body);
+  // A real call: consolidate memory and write everything. The on_end tool runs
+  // as the call ends, so the server clock dates the call.
+  const when = new Date();
   const callDateLabel = istDateLabel(when);
   const logDate = istIsoDate(when);
   const nextCallNumber = currentCallNumber + 1;
