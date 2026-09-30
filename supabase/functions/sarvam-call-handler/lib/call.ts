@@ -6,6 +6,8 @@
 export interface TranscriptTurn {
   role: "agent" | "user";
   text: string;
+  /** The words in the parent's own language (Sarvam's indic_text), when different. */
+  original?: string;
   /** Seconds or ISO time, when Sarvam sends one. */
   timestamp?: string | number;
 }
@@ -88,6 +90,8 @@ export function normalizeTranscript(body: Record<string, any>): TranscriptTurn[]
         role: toRole(t?.role),
         text: String(t?.en_text || t?.text || t?.content || t?.indic_text || "").trim(),
       };
+      const original = String(t?.indic_text || "").trim();
+      if (original && original !== turn.text) turn.original = original;
       const ts = TIMESTAMP_FIELDS.map((f) => t?.[f]).find((v) => v !== undefined && v !== null && v !== "");
       if (ts !== undefined) turn.timestamp = ts;
       return turn;

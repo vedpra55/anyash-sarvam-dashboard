@@ -325,6 +325,12 @@ export function ParentDetailCanvas({
 
         {activeTab === "memory" && (
           <div className="pt-8">
+            <div className="mb-6 text-[12.5px] text-zinc-500">
+              Progressive memory (briefs, threads, living profile):{" "}
+              <Link href={`/memory/${parent.id}`} className="text-zinc-300 hover:text-white underline underline-offset-2">
+                open
+              </Link>
+            </div>
             <MemoryPanel
               key={parent.id}
               parentId={parent.id}

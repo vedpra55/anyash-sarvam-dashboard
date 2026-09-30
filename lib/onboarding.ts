@@ -323,3 +323,79 @@ export function readOnboarding(parent: any): OnboardingInput {
 export function shouldWriteStartingContext(parent: { number_of_calls?: number | null } | null | undefined): boolean {
   return !parent || !(Number(parent.number_of_calls) > 1);
 }
+
+/* ------------------------------------------------------------------ */
+/* Living profile (profile_facts, Phase 3)                              */
+/* ------------------------------------------------------------------ */
+
+export interface FactRow {
+  id: string;
+  block: string;
+  key: string;
+  value: string;
+  source: "child" | "parent";
+}
+
+/** Keys the onboarding form owns in profile_facts. child_worry is never one. */
+export const ONBOARDING_FACT_KEYS = [
+  "person/address_as",
+  "person/language",
+  "person/child",
+  "household/living_situation",
+  "household/household_help",
+  "routine/wake_time",
+  "routine/sleep_time",
+  "routine/preferred_call_time",
+  "health/conditions",
+  "health/medicines",
+  "likes/enjoys",
+  "sensitivities/avoid_topics",
+] as const;
+
+/** The form's answers as living-profile facts, in the same shape the migration seeded. */
+export function onboardingFacts(input: OnboardingInput): { block: string; key: string; value: string }[] {
+  const child = clean(input.child_name);
+  const relation = clean(input.relationship).toLowerCase();
+  const values: Record<(typeof ONBOARDING_FACT_KEYS)[number], string> = {
+    "person/address_as": clean(input.honorific),
+    "person/language": clean(input.language),
+    "person/child": child ? (relation ? `${child} (${relation})` : child) : "",
+    "household/living_situation": clean(input.living_situation).replace(/_/g, " "),
+    "household/household_help": clean(input.household_help),
+    "routine/wake_time": clean(input.wake_time),
+    "routine/sleep_time": clean(input.sleep_time),
+    "routine/preferred_call_time": clean(input.preferred_call_time),
+    "health/conditions": cleanList(input.conditions).join("; "),
+    "health/medicines": cleanList(input.medicines).join("; "),
+    "likes/enjoys": clean(input.enjoys),
+    "sensitivities/avoid_topics": clean(input.avoid_topics),
+  };
+  return ONBOARDING_FACT_KEYS.filter((k) => values[k]).map((k) => {
+    const [block, key] = k.split("/");
+    return { block, key, value: values[k] };
+  });
+}
+
+/**
+ * What saving the form changes in the living profile. Facts are never deleted:
+ * a changed or cleared answer closes the family's old fact, and a fact the
+ * parent has said in their own words is never replaced by the form.
+ */
+export function planFactSync(
+  desired: { block: string; key: string; value: string }[],
+  current: FactRow[],
+): { insert: { block: string; key: string; value: string }[]; close: string[] } {
+  const byKey = new Map(current.map((f) => [`${f.block}/${f.key}`, f]));
+  const wanted = new Map(desired.map((d) => [`${d.block}/${d.key}`, d]));
+  const insert: { block: string; key: string; value: string }[] = [];
+  const close: string[] = [];
+  for (const k of ONBOARDING_FACT_KEYS) {
+    const now = byKey.get(k);
+    const want = wanted.get(k);
+    if (now?.source === "parent") continue;
+    if (now && want && clean(now.value) === want.value) continue;
+    if (now) close.push(now.id);
+    if (want) insert.push(want);
+  }
+  return { insert, close };
+}

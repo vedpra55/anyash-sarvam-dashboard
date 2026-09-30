@@ -7,6 +7,8 @@ import { getServiceSupabase } from "./supabase";
 import {
   buildProfileRow,
   buildStartingContext,
+  onboardingFacts,
+  planFactSync,
   shouldWriteStartingContext,
   OnboardingInput,
 } from "./onboarding";
@@ -75,6 +77,7 @@ export async function saveOnboardingProfile(input: OnboardingInput, mode: SaveMo
   if (existing) {
     const { data, error } = await supabase.from("parent_profiles").update(payload).eq("id", existing.id).select().single();
     if (error) throw new ProfileSaveError(error.message, 500);
+    await syncProfileFacts(data.id, input);
     return { parent: data, created: false };
   }
 
@@ -84,7 +87,39 @@ export async function saveOnboardingProfile(input: OnboardingInput, mode: SaveMo
     .select()
     .single();
   if (error) throw new ProfileSaveError(error.message, 500);
+  await syncProfileFacts(data.id, input);
   return { parent: data, created: true };
+}
+
+/**
+ * Mirrors the form into the living profile (profile_facts) as the family's
+ * unconfirmed facts. A failure here is logged, not raised: the profile itself
+ * is saved, and the next save syncs again.
+ */
+async function syncProfileFacts(parentId: string, input: OnboardingInput) {
+  const supabase = getServiceSupabase();
+  try {
+    const { data: current, error } = await supabase
+      .from("profile_facts")
+      .select("id, block, key, value, source")
+      .eq("parent_id", parentId)
+      .is("valid_to", null);
+    if (error) throw error;
+    const plan = planFactSync(onboardingFacts(input), current || []);
+    const today = new Date(Date.now() + 5.5 * 3_600_000).toISOString().slice(0, 10); // India date
+    if (plan.close.length) {
+      const { error: closeErr } = await supabase.from("profile_facts").update({ valid_to: today }).in("id", plan.close);
+      if (closeErr) throw closeErr;
+    }
+    if (plan.insert.length) {
+      const { error: insertErr } = await supabase.from("profile_facts").insert(
+        plan.insert.map((f) => ({ parent_id: parentId, ...f, source: "child", confirmed: false, valid_from: today })),
+      );
+      if (insertErr) throw insertErr;
+    }
+  } catch (err: any) {
+    console.error(`profile_facts sync failed for ${parentId}:`, err?.message || err);
+  }
 }
 
 /* ------------------------------------------------------------------ */

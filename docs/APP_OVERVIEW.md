@@ -114,6 +114,12 @@ up the link; a phone already on file is refused. Every answer is stored as
 HEALTH / LIFE / AVOID / NOTE). `child_worry` never reaches the agent.
 Examples: `docs/phase2/`.
 
+### `/memory/[parentId]` — progressive memory (Phase 3)
+Linked from the parent's Memory tab. Shows, per call, the old memory next to
+the new pre-call brief (and which one was sent), the brief mode, open and
+closed threads with the parent's last words, the living profile (current or
+with history), reflections, and the event log by call.
+
 ### `/calls` — Calls
 File: `app/calls/page.tsx`
 - Calls since **25 Sep 2026** (intentional cutoff), grouped by day, with
@@ -202,13 +208,14 @@ TanStack Query 5.
 | `/api/parents` | GET | All `parent_profiles` + Sarvam calls (linked by phone) + last 14 `daily_health_logs` + recent AI reviews (`call_records` + `decision_cards`) each |
 | `/api/parents` | POST | Create a parent from the onboarding form (or update the one with the same phone). Writes the starting `current_user_context` |
 | `/api/parents/[id]/memory` | GET | Current memory plus how it changed on each call |
+| `/api/memory/[parentId]` | GET | Progressive memory: briefs with the context sent, profile facts (with history), threads, reflections, events |
 | `/api/decisions/[id]` | PATCH | Mark a decision card's follow-up done / not done |
 | `/api/calls/details` | GET | AI assessment, decision card and health log for one call (`attempt_id`) |
 | `/api/parents/[id]` | PATCH | `{ profile }` saves the onboarding form (starting memory rewritten only before the first real call); other fields (e.g. `current_user_context`) are saved as given |
 | `/api/onboarding/links` | POST | New single-use onboarding link |
 | `/api/onboarding/[token]` | GET / POST | Check a link / save the child's form and use up the link |
 | `/api/parents/[id]` | DELETE | Deletes daily logs, call records, decision cards, then the parent |
-| `/api/calls/outbound` | POST | Finds the Supabase profile (refuses numbers with no profile, and calls after the latest call time), syncs call count & context, calls Sarvam Outbound API. Falls back to a **simulated** attempt if telephony env vars are missing |
+| `/api/calls/outbound` | POST | Finds the Supabase profile (refuses numbers with no profile, and calls after the latest call time), syncs call count & context, calls Sarvam Outbound API. Gets a pre-call brief from `build-brief`: in `shadow` mode after the call is placed (old context sent), in `live` mode before it (brief sent; old context if the brief fails). Falls back to a **simulated** attempt if telephony env vars are missing |
 | `/api/insights` | GET | Trial call ledger for Insights: Sarvam attempts + evaluations joined with Supabase reviews, logs and follow-ups; test calls counted by reason |
 | `/api/calls` | GET | Sarvam Analytics attempts (outbound, non-test, since 25 Sep 2026), normalised, name-matched to parents, with the AI verdict from `call_records` |
 | `/api/calls/transcript` | GET | Transcript by `interaction_id` from Sarvam; falls back to `call_records.transcript` |
@@ -324,7 +331,25 @@ post-call variable, `raw_agent_variables`, `transcript`,
 `action_completed`.
 
 **`app_settings`** (key/value settings edited from the dashboard)
-`key` (PK), `value` jsonb, `updated_at`. Currently holds `sarvam_app_version`.
+`key` (PK), `value` jsonb, `updated_at`. Holds `sarvam_app_version` and
+`memory_brief_mode` (`"shadow"` | `"live"` | `"off"`).
+
+**Progressive memory** (Phase 3, migration `20260930210000_progressive_memory`;
+written only by the edge functions):
+- `memory_events`: what the parent said on each real call (category, the
+  parent's own words, summary, importance 1–5). Insert-only (trigger).
+- `profile_facts`: the living profile, one current value per
+  parent/block/key (`valid_to is null`); changes close the old row. Seeded from
+  onboarding (`source child, confirmed false`), kept in sync when the form is
+  saved; a fact the parent confirmed is never replaced by the form.
+  `child_worry` is refused by a check constraint.
+- `threads`: open items (importance ≥3) with `next_ask_call` and the parent's
+  last words; closed as resolved, or faded after 5 calls without mention.
+- `reflections`: 2–3 patterns every 5th real call, each citing event ids.
+- `call_briefs`: pre-call briefs (`mode` shadow / live / example), the
+  `attempt_id` and the `sent_user_context` of the call they were built for.
+- `internal_config.memory_secret`: shared secret for internal calls
+  (`x-memory-secret`).
 
 ### Edge Function `sarvam-call-handler` (`verify_jwt: false`, source in `supabase/functions/`)
 
@@ -344,6 +369,25 @@ Two modes on POST:
    `call_records`, and a `decision_cards` row; increments `number_of_calls`.
    Any other call is saved with `call_status = no_conversation` and the
    profile is untouched. If the model fails, the previous memory is kept.
+   With `MEMORY_V1=off` (function secret) the old `current_user_context`
+   rewrite stops; everything else still runs.
+3. **Memory pipeline** (after a real call, in the background): extractor →
+   profile updater (ADD / CONFIRM / UPDATE, each citing event ids) → thread
+   rules → reflection every 5th call. Models propose; `lib/memory/rules.ts`
+   decides: quotes must match a parent turn, facts need evidence from this
+   call, thread timing is fixed. Prompts: `prompts/extractor.ts`,
+   `profile_updater.ts`, `reflection.ts`, `brief.ts`.
+4. **`memory_backfill`** (needs `x-memory-secret`): replays a parent's past
+   real calls (2 per run) and then writes an `example` brief.
+
+### Edge Function `build-brief` (`verify_jwt: false`, needs `x-memory-secret`)
+
+POST `{ parent_id, call_number?, mode? }` → a 120–150 word brief (who they
+are; how they like to talk; the threads due, with the parent's words; 1–2
+health areas not covered this week; things to avoid), saved to
+`call_briefs`. Required threads (due, and life threads from the last call)
+are checked; the brief is rewritten once, then any still missing are appended.
+Deploy both functions with `scripts/bundle-functions.sh` (single-file bundles).
 
 **Bedtime guard**: `parent_profiles.preferred_call_time` / `sleep_time`
 ("HH:MM", India time, editable on the parent's Profile tab). The outbound

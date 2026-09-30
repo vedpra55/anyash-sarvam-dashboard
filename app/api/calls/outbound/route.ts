@@ -1,15 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import {
   ParentProfile,
   VoiceHealthConfig,
   SupportedLanguage,
 } from "@/lib/types";
 import { buildSarvamVariables, resolveCallCount } from "@/lib/prompts";
-import { getServiceSupabase } from "@/lib/supabase";
+import { getServiceSupabase, supabaseUrl } from "@/lib/supabase";
 import { getSavedAgentVersion } from "@/lib/settings";
 import { checkCallTime } from "@/lib/callTime";
+import { chooseUserContext, readBriefMode, recordBriefUse, requestBrief } from "@/lib/briefs";
 
 export const dynamic = "force-dynamic";
+// A live brief is written before the call is placed (up to ~25 s).
+export const maxDuration = 60;
 
 const PROFILE_COLUMNS =
   "id, parent_name, current_user_context, number_of_calls, phone_number, facts, preferred_call_time, sleep_time";
@@ -215,9 +218,21 @@ export async function POST(req: NextRequest) {
           ? "Hindi"
           : language;
 
-      const effectiveUserContext = (user_context_override !== undefined && user_context_override.trim())
-        ? user_context_override.trim()
-        : fetchedUserContext;
+      // Phase 3 pre-call brief. Shadow: built after the call is placed, old
+      // context sent. Live: built first and sent, old context if it fails.
+      const briefDb = getServiceSupabase();
+      const briefMode = userId ? await readBriefMode(briefDb) : "off";
+      const override = typeof user_context_override === "string" ? user_context_override : undefined;
+      const liveBrief =
+        briefMode === "live" && !override?.trim()
+          ? await requestBrief(briefDb, supabaseUrl, userId, callCount, "live")
+          : null;
+      const { context: effectiveUserContext, usedBrief } = chooseUserContext({
+        mode: briefMode,
+        brief: liveBrief,
+        oldContext: fetchedUserContext,
+        override,
+      });
 
       // The agent's own prompt and intro open the call. A greeting is sent only
       // when a manual test passes initial_bot_message_override.
@@ -308,10 +323,21 @@ export async function POST(req: NextRequest) {
       }
 
       const data = await sarvamRes.json();
+      const placedAttemptId: string | null = data.attempt_id || null;
+      if (liveBrief) {
+        after(() => recordBriefUse(briefDb, liveBrief.briefId, placedAttemptId, effectiveUserContext, usedBrief));
+      } else if (briefMode === "shadow") {
+        after(async () => {
+          const shadow = await requestBrief(briefDb, supabaseUrl, userId, callCount, "shadow");
+          if (shadow) await recordBriefUse(briefDb, shadow.briefId, placedAttemptId, effectiveUserContext, false);
+        });
+      }
       return NextResponse.json({
         success: true,
         attemptId: data.attempt_id || `sarvam-att-${Date.now()}`,
         mode: "live_telephony",
+        brief_mode: briefMode,
+        used_brief: usedBrief,
         recipient: profile.parentPhone,
         language,
         number_of_calls: callCountStr,

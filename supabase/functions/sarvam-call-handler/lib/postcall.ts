@@ -18,8 +18,8 @@ import {
 } from "./call.ts";
 import { hasPersonalSection, initialMemory, stampHeader } from "./memory.ts";
 import { buildConsolidationPrompt, MEMORY_WORD_LIMIT } from "../prompts/consolidation.ts";
+import { AI_MODEL, chatJson } from "./llm.ts";
 
-const AI_MODEL = "gpt-6-luna";
 const AI_MODEL_LABEL = `${AI_MODEL} (reasoning_effort: medium)`;
 /** A delivery that started consolidating this recently is treated as in flight. */
 const IN_FLIGHT_MS = 5 * 60_000;
@@ -62,42 +62,20 @@ async function findParent(supabase: SupabaseClient, userId: string | null, paren
   return null;
 }
 
-async function consolidate(openAiKey: string, systemPrompt: string, userPayload: string) {
-  if (!openAiKey) {
-    console.error("OPENAI_API_KEY is not set; skipping memory consolidation");
-    return { result: null, usage: null };
-  }
-  try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${openAiKey.trim()}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        reasoning_effort: "medium",
-        messages: [
-          { role: "developer", content: systemPrompt },
-          { role: "user", content: userPayload },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
-    if (!res.ok) {
-      console.error(`OpenAI ${AI_MODEL} error:`, res.status, await res.text());
-      return { result: null, usage: null };
-    }
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    return { result: content ? JSON.parse(content) : null, usage: data.usage || null };
-  } catch (err) {
-    console.error("Memory consolidation failed:", err);
-    return { result: null, usage: null };
-  }
+export interface AssessmentOptions {
+  /**
+   * MEMORY_V1: when false, the model no longer rewrites current_user_context
+   * (Phase 3 briefs replace it). The daily log and decision card still come
+   * from the same model call.
+   */
+  memoryV1?: boolean;
 }
 
 export async function recordCallAssessment(
   supabase: SupabaseClient,
   body: Record<string, any>,
   openAiKey: string,
+  { memoryV1 = true }: AssessmentOptions = {},
 ) {
   const vars: Record<string, any> = {
     ...(body.agent_variables || {}),
@@ -260,15 +238,16 @@ export async function recordCallAssessment(
     2,
   );
 
-  const { result: ai, usage } = await consolidate(
+  const { result: ai, usage } = await chatJson<any>(
     openAiKey,
     buildConsolidationPrompt({ callDateLabel, callNumber: currentCallNumber }),
     userPayload,
+    { label: `${attemptId} consolidation` },
   );
 
-  // If the model fails, keep the previous memory rather than writing a guess.
+  // If the model fails (or MEMORY_V1 is off), keep the previous memory rather than writing a guess.
   const updatedUserContext = stampHeader(
-    typeof ai?.updated_user_context === "string" && ai.updated_user_context.trim()
+    memoryV1 && typeof ai?.updated_user_context === "string" && ai.updated_user_context.trim()
       ? ai.updated_user_context
       : previousUserContext,
     callDateLabel,
@@ -346,6 +325,7 @@ export async function recordCallAssessment(
       {
         ...baseRecord,
         call_status: "connected",
+        call_number: currentCallNumber,
         failure_reason: null,
         resulting_user_context: updatedUserContext,
         ai_processed: Boolean(ai),
@@ -412,5 +392,17 @@ export async function recordCallAssessment(
     ai_model: AI_MODEL_LABEL,
     ai_processed: Boolean(ai),
     updated_user_context: updatedUserContext,
+    // Input for the Phase 3 memory pipeline, which runs after this returns.
+    memory:
+      parentId && savedCall?.id
+        ? {
+            parentId,
+            callRecordId: savedCall.id as string,
+            callNumber: currentCallNumber,
+            callDate: logDate,
+            transcript,
+            extracted: extracted(vars),
+          }
+        : null,
   };
 }
