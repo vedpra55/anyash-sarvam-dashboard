@@ -119,11 +119,21 @@ export function validateOnboarding(raw: Partial<OnboardingInput> | null | undefi
     if (!clock) return { ok: false, error: `${field.replace(/_/g, " ")} must be a time like 07:30.` };
     input[field] = clock;
   }
-  if (!input.phone_number.startsWith("+")) {
-    const digits = input.phone_number.replace(/\D/g, "");
-    input.phone_number = digits.length === 10 ? `+91${digits}` : `+${digits}`;
-  }
+  input.phone_number = normalizeIndianPhone(input.phone_number);
   return { ok: true, input };
+}
+
+/**
+ * "+91" plus the 10-digit number for Indian numbers typed as 10 digits, with a
+ * leading 0, or with 91 and no plus. Numbers already starting with + are kept.
+ */
+export function normalizeIndianPhone(raw: string): string {
+  if (raw.startsWith("+")) return `+${raw.replace(/\D/g, "")}`;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `+91${digits.slice(1)}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  return `+${digits}`;
 }
 
 function livingLabel(value?: string): string {

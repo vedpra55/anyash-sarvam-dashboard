@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildProfileRow,
   buildStartingContext,
+  normalizeIndianPhone,
   readOnboarding,
   shouldWriteStartingContext,
   validateOnboarding,
@@ -167,4 +168,12 @@ test("dashboard-edited routines replace the stored ones; absent, they are kept",
   const row = buildProfileRow(v.input, { routines: [{ time: "08:30 AM", activity: "Breakfast" }] });
   assert.deepEqual(row.routines.slice(2), [{ time: "7:00 AM", activity: "Walk", source: "child", confirmed: false }]);
   assert.deepEqual(readOnboarding(row).other_routines, [{ time: "7:00 AM", activity: "Walk" }]);
+});
+
+test("Indian phone numbers are normalised to +91 and 10 digits", () => {
+  assert.equal(normalizeIndianPhone("98765 43210"), "+919876543210");
+  assert.equal(normalizeIndianPhone("09876543210"), "+919876543210");
+  assert.equal(normalizeIndianPhone("919876543210"), "+919876543210");
+  assert.equal(normalizeIndianPhone("+91 98765 43210"), "+919876543210");
+  assert.equal(normalizeIndianPhone("+1 415 555 0100"), "+14155550100");
 });

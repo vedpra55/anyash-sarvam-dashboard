@@ -148,6 +148,7 @@ export async function POST(req: NextRequest) {
             current_user_context: effectiveContext,
             number_of_calls: callCount,
             facts: updatedFacts,
+            language: updatedFacts.language,
             updated_at: new Date().toISOString(),
           })
           .eq("id", dbProfile.id);
