@@ -6,7 +6,7 @@ import { invalidateAll } from "@/lib/queries";
 import { ParentItem } from "./ParentsListColumn";
 import { ParentFormModal } from "./ParentFormModal";
 import { CallModal } from "./CallModal";
-import { Modal, Button, Toast, ToastMessage } from "./primitives";
+import { Modal, Button, Toast, ToastMessage, TextInput } from "./primitives";
 
 /**
  * Call, add, edit and remove flows shared by every page, with their pop-ups
@@ -29,7 +29,30 @@ export function useParentActions({
   const [deleting, setDeleting] = useState<ParentItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [linking, setLinking] = useState(false);
+  const [shownLink, setShownLink] = useState<string | null>(null);
+
   const closeToast = useCallback(() => setToast(null), []);
+
+  /** Creates a single-use onboarding link and copies it for the child. */
+  const copyOnboardingLink = useCallback(async () => {
+    setLinking(true);
+    try {
+      const res = await fetch("/api/onboarding/links", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't create the link.");
+      try {
+        await navigator.clipboard.writeText(data.url);
+        setToast({ tone: "success", message: "Onboarding link copied. It works once and expires in 14 days." });
+      } catch {
+        setShownLink(data.url); // clipboard blocked: show it to copy by hand
+      }
+    } catch (err: any) {
+      setToast({ tone: "error", message: err.message || "Couldn't create the link." });
+    } finally {
+      setLinking(false);
+    }
+  }, []);
 
   const openAdd = useCallback(() => {
     setEditing(null);
@@ -136,9 +159,30 @@ export function useParentActions({
         }
       />
 
+      <Modal
+        open={Boolean(shownLink)}
+        onClose={() => setShownLink(null)}
+        width={480}
+        title="Onboarding link"
+        description="Send this to the child. It works once and expires in 14 days."
+        footer={<Button variant="primary" onClick={() => setShownLink(null)}>Done</Button>}
+      >
+        <TextInput readOnly value={shownLink || ""} onFocus={(e) => e.currentTarget.select()} aria-label="Onboarding link" />
+      </Modal>
+
       <Toast toast={toast} onClose={closeToast} />
     </>
   );
 
-  return { openAdd, openEdit, openCall, askDelete, isCalling, callingId: calling?.id || null, ui };
+  return {
+    openAdd,
+    openEdit,
+    openCall,
+    askDelete,
+    copyOnboardingLink,
+    isLinking: linking,
+    isCalling,
+    callingId: calling?.id || null,
+    ui,
+  };
 }

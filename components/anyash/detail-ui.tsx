@@ -297,6 +297,16 @@ export function MemoryDocument({ memory }: { memory: ParsedMemory }) {
         </Section>
       )}
 
+      {memory.fromFamily.length > 0 && (
+        <Section title="Starting notes from the family">
+          <dl>
+            {memory.fromFamily.map((f, i) => (
+              <Field key={i} label={f.label}>{f.text}</Field>
+            ))}
+          </dl>
+        </Section>
+      )}
+
       {memory.log.length > 0 && (
         <Section title="Recent calls">
           <div className="divide-y divide-white/[0.05]">

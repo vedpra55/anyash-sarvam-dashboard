@@ -67,6 +67,8 @@ function ParentsView() {
         selectedParentId={shown?.id || null}
         onSelectParent={(p) => select(p.id)}
         onAddParentClick={actions.openAdd}
+        onCopyLinkClick={actions.copyOnboardingLink}
+        isLinking={actions.isLinking}
       />
       <div className={`flex-1 min-w-0 ${selected ? "flex" : "hidden lg:flex"}`}>
         <ParentDetailCanvas

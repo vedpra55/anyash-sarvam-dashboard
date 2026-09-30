@@ -26,12 +26,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const queryClient = useQueryClient();
 
+  // Public pages (the child's onboarding link) get no dashboard and no data.
+  const isPublic = pathname?.startsWith("/onboard/") ?? false;
+
   // Load the data every page needs as soon as the app opens, so moving between
   // Today, Parents and Calls never waits on the network.
   useEffect(() => {
+    if (isPublic) return;
     queryClient.prefetchQuery(parentsQuery);
     queryClient.prefetchQuery(callsQuery);
-  }, [queryClient]);
+  }, [queryClient, isPublic]);
+
+  if (isPublic) return <>{children}</>;
 
   return (
     <div className="flex flex-col md:flex-row h-[100dvh] w-full overflow-hidden bg-ay-canvas text-zinc-300">

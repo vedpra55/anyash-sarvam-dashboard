@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { readCallTimes } from "@/lib/callTime";
+import { validateOnboarding } from "@/lib/onboarding";
+import { saveOnboardingProfile, ProfileSaveError } from "@/lib/parentStore";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,15 @@ export async function PATCH(
     }
 
     const body = await req.json();
+
+    // The onboarding form sends the whole profile.
+    if (body.profile) {
+      const valid = validateOnboarding(body.profile);
+      if (!valid.ok) return NextResponse.json({ error: valid.error }, { status: 400 });
+      const { parent } = await saveOnboardingProfile(valid.input, { kind: "update", parentId });
+      return NextResponse.json({ success: true, parent });
+    }
+
     const supabase = getServiceSupabase();
 
     const callTimes = readCallTimes(body);
@@ -85,7 +96,8 @@ export async function PATCH(
     return NextResponse.json({ success: true, parent: updatedParent });
   } catch (err: any) {
     console.error("Update parent failed:", err);
-    return NextResponse.json({ error: err.message || "Failed to update parent" }, { status: 500 });
+    const status = err instanceof ProfileSaveError ? err.status : 500;
+    return NextResponse.json({ error: err.message || "Failed to update parent" }, { status });
   }
 }
 

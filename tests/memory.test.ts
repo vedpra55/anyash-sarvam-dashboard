@@ -45,3 +45,14 @@ test("diff reports new and closed life threads and personal changes", () => {
   assert.equal(d.personalChanged, true);
   assert.equal(d.baselineChanged, false);
 });
+
+test("onboarding starting notes are parsed, not dumped into other", () => {
+  const m = parseMemory(
+    "PERSON: Mummy Ji (Sunita); lives alone\nHEALTH (from Priya, not yet confirmed by the parent): High BP\nAVOID: Papa's passing\nNOTE: everything above came from Priya.",
+  );
+  assert.deepEqual(m.fromFamily.map((f) => f.label), ["Person", "Health", "Avoid", "Note"]);
+  assert.equal(m.fromFamily[1].text, "High BP");
+  assert.deepEqual(m.other, []);
+  // PERSONAL is its own section, not PERSON.
+  assert.deepEqual(parseMemory("PERSONAL: grandson Aarav").fromFamily, []);
+});

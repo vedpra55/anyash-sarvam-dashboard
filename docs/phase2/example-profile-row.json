@@ -1,0 +1,73 @@
+{
+  "parent_name": "Sunita Sharma",
+  "honorific": "Mummy Ji",
+  "phone_number": "+919876543210",
+  "child_name": "Priya",
+  "language": "Hindi",
+  "preferred_call_time": "18:00",
+  "sleep_time": "22:30",
+  "facts": {
+    "relationship": {
+      "value": "Daughter",
+      "source": "child",
+      "confirmed": false
+    },
+    "living_situation": {
+      "value": "alone",
+      "source": "child",
+      "confirmed": false
+    },
+    "household_help": {
+      "value": "Khud banati hain; subah ek didi safai ke liye aati hain",
+      "source": "child",
+      "confirmed": false
+    },
+    "enjoys": {
+      "value": "Bhajan, apna garden, pote Aarav ki baatein",
+      "source": "child",
+      "confirmed": false
+    },
+    "avoid_topics": {
+      "value": "Papa ka pichle saal dehant hua; unke baare mein na poochein. Ek kaan se kam sunti hain.",
+      "source": "child",
+      "confirmed": false
+    },
+    "child_worry": {
+      "value": "Tabiyat kharab ho to batati nahi hain",
+      "source": "child",
+      "confirmed": false
+    },
+    "language": "Hindi",
+    "family_member": "Priya"
+  },
+  "routines": [
+    {
+      "name": "wake",
+      "time": "05:30",
+      "source": "child",
+      "confirmed": false
+    },
+    {
+      "name": "sleep",
+      "time": "22:30",
+      "source": "child",
+      "confirmed": false
+    }
+  ],
+  "medical_baseline": {
+    "conditions": {
+      "value": [
+        "High BP"
+      ],
+      "source": "child",
+      "confirmed": false
+    },
+    "medicines": {
+      "value": [
+        "Amlodipine 5 mg, subah"
+      ],
+      "source": "child",
+      "confirmed": false
+    }
+  }
+}

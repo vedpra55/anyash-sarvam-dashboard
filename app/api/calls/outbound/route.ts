@@ -104,28 +104,14 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // If still not found, create a new separate profile for this phone number
-      if (!dbProfile && normalizedPhone) {
-        const { data: newProfile } = await supabase
-          .from("parent_profiles")
-          .insert({
-            phone_number: normalizedPhone,
-            parent_name: profile.parentName || "Parent",
-            child_name: profile.childName || "Family",
-            honorific: profile.honorific || "Mummy Ji",
-            number_of_calls: callCount,
-            current_user_context: `TODAY: Initial Check-in | CALL COUNT: ${callCount}\nBASELINE: ${profile.parentName || "Parent"} | Child: ${profile.childName || "Family"}\nACTIVE WATCHLIST:\n- First call check-in.`,
-          })
-          .select(PROFILE_COLUMNS)
-          .single();
-        dbProfile = newProfile;
-      }
-
-      // Bedtime guard: never call after the parent's latest call time (India time).
+      // Every family is onboarded (a profile from the child) before its first call,
+      // and is never called after its latest call time (India time).
       const timeCheck = dbProfile ? checkCallTime(dbProfile) : null;
-      if (timeCheck && !timeCheck.allowed) {
+      if (!dbProfile) {
+        refusedReason = "This number has no parent profile yet. Add the parent (or send the onboarding link) before calling.";
+      } else if (timeCheck && !timeCheck.allowed) {
         refusedReason = timeCheck.reason;
-      } else if (dbProfile) {
+      } else {
         userId = dbProfile.id;
         fetchedUserContext = dbProfile.current_user_context || "";
 
@@ -174,7 +160,7 @@ export async function POST(req: NextRequest) {
 
     if (refusedReason) {
       console.warn(`Outbound call refused: ${refusedReason}`);
-      return NextResponse.json({ error: refusedReason, reason: "after_latest_call_time" }, { status: 409 });
+      return NextResponse.json({ error: refusedReason }, { status: 409 });
     }
 
     const callCountStr = String(callCount);

@@ -35,8 +35,19 @@ export interface ParsedMemory {
   log: MemoryLogEntry[];
   watchlist: string[];
   lifeThreads: string[];
+  /** Starting notes from the child's onboarding (PERSON, DAY, HEALTH, LIFE, AVOID, NOTE). */
+  fromFamily: { label: string; text: string }[];
   other: string[];
 }
+
+const FAMILY_LABELS: Record<string, string> = {
+  PERSON: "Person",
+  DAY: "Day",
+  HEALTH: "Health",
+  LIFE: "Life",
+  AVOID: "Avoid",
+  NOTE: "Note",
+};
 
 function splitList(value: string, separator: RegExp): string[] {
   return value
@@ -53,6 +64,7 @@ export function parseMemory(raw?: string | null): ParsedMemory {
     log: [],
     watchlist: [],
     lifeThreads: [],
+    fromFamily: [],
     other: [],
   };
   if (!raw) return memory;
@@ -83,6 +95,13 @@ export function parseMemory(raw?: string | null): ParsedMemory {
     const routine = line.match(/^ROUTINE:\s*(.*)$/i);
     if (routine) {
       memory.routine = splitList(routine[1], /\s*;\s*/);
+      section = "other";
+      continue;
+    }
+
+    const family = line.match(/^(?!LIFE THREADS)(PERSON|DAY|HEALTH|LIFE|AVOID|NOTE)\b[^:]*:\s*(.*)$/);
+    if (family) {
+      memory.fromFamily.push({ label: FAMILY_LABELS[family[1]], text: family[2].trim() });
       section = "other";
       continue;
     }
@@ -152,6 +171,7 @@ export function isEmptyMemory(m: ParsedMemory): boolean {
     m.log.length === 0 &&
     m.watchlist.length === 0 &&
     m.lifeThreads.length === 0 &&
+    m.fromFamily.length === 0 &&
     m.other.length === 0
   );
 }

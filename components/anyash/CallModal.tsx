@@ -34,7 +34,7 @@ export function CallModal({ isOpen, parent, onClose, onDispatchCall, isCalling }
     setCallNumber(count);
     setPhone(parent.phone_number || "");
     setEditingPhone(false);
-    setLanguage((parent.facts?.language as SupportedLanguage) || "Hindi");
+    setLanguage(((parent.language || parent.facts?.language) as SupportedLanguage) || "Hindi");
     setContext(parent.current_user_context || "");
     setShowContext(false);
   }, [isOpen, parent]);

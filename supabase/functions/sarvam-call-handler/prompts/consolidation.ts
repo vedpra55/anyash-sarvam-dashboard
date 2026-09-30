@@ -48,6 +48,8 @@ Process the completed call and do three things.
    - [health item to ask about next call]
    LIFE THREADS:
    - [open non-health item worth asking about next call, e.g. power cut and heat yesterday; grandson visiting on Sunday]
+   AVOID: [only if the previous memory has one; copied unchanged]
+   NOTE: [only if the previous memory has one; copied unchanged]
 
    Rules:
    - The first line is always the LAST UPDATED line above, copied exactly. Never add a TODAY line.
@@ -58,6 +60,10 @@ Process the completed call and do three things.
    - LIFE THREADS: carry over threads from the previous memory that are still open. Remove one when the
      parent said it is resolved. Add new non-health items the parent brought up that are worth a follow-up.
      If there are none, write "- none".
+   - The first memory comes from the family's onboarding form (PERSON, DAY, HEALTH, LIFE, AVOID, NOTE lines).
+     Fold PERSON, DAY, HEALTH and LIFE into BASELINE, ROUTINE and PERSONAL. Mark each fact the parent has not
+     yet said themselves with "(from family, unconfirmed)", and drop the mark once the parent confirms it in
+     their own words. Keep the AVOID and NOTE lines exactly as they are, on every call.
    - ACTIVE WATCHLIST holds health items only. Remove an item when the parent says it has resolved;
      add a new symptom, skipped meal, poor sleep or medicine issue.
    - Keep only the last 2-3 calls in the rolling log.

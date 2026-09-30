@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { fetchSarvamCalls, linkCallsToParents } from "@/lib/sarvam";
-import { readCallTimes } from "@/lib/callTime";
+import { validateOnboarding } from "@/lib/onboarding";
+import { saveOnboardingProfile, ProfileSaveError } from "@/lib/parentStore";
 
 export const dynamic = "force-dynamic";
 
@@ -95,138 +96,23 @@ export async function GET() {
   }
 }
 
+/** Add a parent from the onboarding form (see lib/onboarding.ts). */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
-      parent_name,
-      honorific,
-      phone_number,
-      preferred_language,
-      child_name,
-      relationship,
-      routines_text,
-      baseline_text,
-    } = body;
+    // Older callers sent preferred_language / medications.
+    const valid = validateOnboarding({
+      ...body,
+      language: body.language || body.preferred_language,
+      medicines: body.medicines || body.medications,
+    });
+    if (!valid.ok) return NextResponse.json({ error: valid.error }, { status: 400 });
 
-    if (!parent_name || !phone_number) {
-      return NextResponse.json(
-        { error: "Parent name and phone number are required" },
-        { status: 400 }
-      );
-    }
-
-    const callTimes = readCallTimes(body);
-    if ("error" in callTimes) {
-      return NextResponse.json({ error: callTimes.error }, { status: 400 });
-    }
-
-    const supabase = getServiceSupabase();
-    const cleanPhone = phone_number.replace(/[^\d+]/g, "");
-    const last10 = cleanPhone.slice(-10);
-
-    // Structured lists from the form; free-text fields are still accepted.
-    const cleanList = (value: unknown): string[] =>
-      Array.isArray(value) ? value.map((s) => String(s).trim()).filter(Boolean) : [];
-
-    const routines = Array.isArray(body.routines)
-      ? body.routines
-          .map((r: any) => ({ time: String(r.time || "").trim(), activity: String(r.activity || "").trim() }))
-          .filter((r: any) => r.activity)
-      : routines_text
-      ? [{ time: "Daily Routine", activity: routines_text }]
-      : [];
-
-    const conditions = Array.isArray(body.conditions)
-      ? cleanList(body.conditions)
-      : baseline_text
-      ? baseline_text.split(/[,;\n]+/).map((s: string) => s.trim()).filter(Boolean)
-      : [];
-    const medications = cleanList(body.medications);
-
-    const effectiveChild = child_name || "Family";
-    const effectiveRel = relationship || "Child";
-    const newContext = `TODAY: Initial Profile Created | CALL COUNT: 1\nBASELINE: ${parent_name} | Child: ${effectiveChild} (${effectiveRel})`;
-
-    // Check if a parent with this phone already exists to prevent duplicate rows
-    const { data: existing } = await supabase
-      .from("parent_profiles")
-      .select("id, current_user_context, number_of_calls")
-      .or(`phone_number.eq.${cleanPhone},phone_number.ilike.%${last10}%`)
-      .maybeSingle();
-
-    if (existing) {
-      const existingContext = existing.current_user_context || "";
-      let updatedContext = existingContext;
-      if (!existingContext || existingContext.includes("TODAY: Initial")) {
-        updatedContext = `TODAY: Initial Profile Created | CALL COUNT: ${existing.number_of_calls || 1}\nBASELINE: ${parent_name} | Child: ${effectiveChild} (${effectiveRel})`;
-      }
-
-      const { data: updatedParent, error: updateErr } = await supabase
-        .from("parent_profiles")
-        .update({
-          parent_name,
-          honorific: honorific || "Mummy Ji",
-          phone_number: cleanPhone,
-          child_name: effectiveChild,
-          current_user_context: updatedContext,
-          facts: {
-            relationship: effectiveRel,
-            language: preferred_language || "Hindi",
-            family_member: effectiveChild,
-          },
-          routines,
-          medical_baseline: {
-            conditions,
-            medications,
-          },
-          ...callTimes.values,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existing.id)
-        .select()
-        .single();
-
-      if (updateErr) {
-        console.error("Failed to update existing parent profile:", updateErr);
-        return NextResponse.json({ error: updateErr.message }, { status: 500 });
-      }
-
-      return NextResponse.json({ success: true, parent: updatedParent }, { status: 200 });
-    }
-
-    const { data: newParent, error: insertErr } = await supabase
-      .from("parent_profiles")
-      .insert({
-        parent_name,
-        honorific: honorific || "Mummy Ji",
-        phone_number: cleanPhone,
-        child_name: child_name || "Family",
-        number_of_calls: 1,
-        facts: {
-          relationship: relationship || "Parent",
-          language: preferred_language || "Hindi",
-          family_member: child_name || "Family",
-        },
-        routines,
-        medical_baseline: {
-          conditions,
-          medications,
-        },
-        ...callTimes.values,
-        current_user_context: newContext,
-      })
-      .select()
-      .single();
-
-    if (insertErr) {
-      console.error("Failed to insert parent profile:", insertErr);
-      return NextResponse.json({ error: insertErr.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, parent: newParent }, { status: 201 });
+    const { parent, created } = await saveOnboardingProfile(valid.input, { kind: "create" });
+    return NextResponse.json({ success: true, parent }, { status: created ? 201 : 200 });
   } catch (err: any) {
+    const status = err instanceof ProfileSaveError ? err.status : 500;
     console.error("Failed to create parent profile:", err);
-    return NextResponse.json({ error: err.message || "Failed to create parent" }, { status: 500 });
+    return NextResponse.json({ error: err.message || "Failed to create parent" }, { status });
   }
 }

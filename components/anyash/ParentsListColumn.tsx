@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Link2, Plus, Search } from "lucide-react";
 import { getParentStatus, ParentReview } from "@/lib/attention";
 import { Dot, formatRelative } from "./detail-ui";
 import { Button } from "./primitives";
@@ -24,6 +24,8 @@ export interface ParentItem {
   created_at?: string;
   updated_at?: string;
   number_of_calls?: number;
+  /** The agent's starting language. */
+  language?: string | null;
   /** "HH:MM" India time. */
   preferred_call_time?: string | null;
   /** "HH:MM" India time. */
@@ -35,6 +37,9 @@ interface ParentsListColumnProps {
   selectedParentId: string | null;
   onSelectParent: (parent: ParentItem) => void;
   onAddParentClick: () => void;
+  /** Copies a single-use onboarding link for a child to fill. */
+  onCopyLinkClick?: () => void;
+  isLinking?: boolean;
   className?: string;
 }
 
@@ -43,6 +48,8 @@ export function ParentsListColumn({
   selectedParentId,
   onSelectParent,
   onAddParentClick,
+  onCopyLinkClick,
+  isLinking = false,
   className = "",
 }: ParentsListColumnProps) {
   const [query, setQuery] = useState("");
@@ -70,9 +77,23 @@ export function ParentsListColumn({
             Parents
             {parents.length > 0 && <span className="ml-2 text-[14px] font-normal text-zinc-600 tabular-nums">{parents.length}</span>}
           </h1>
-          <Button size="sm" onClick={onAddParentClick} icon={<Plus className="w-3.5 h-3.5" />}>
-            Add
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {onCopyLinkClick && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onCopyLinkClick}
+                disabled={isLinking}
+                title="Copy a single-use link the child can fill on their phone"
+                icon={<Link2 className="w-3.5 h-3.5" />}
+              >
+                {isLinking ? "Creating…" : "Copy onboarding link"}
+              </Button>
+            )}
+            <Button size="sm" onClick={onAddParentClick} icon={<Plus className="w-3.5 h-3.5" />}>
+              Add
+            </Button>
+          </div>
         </div>
         {parents.length > 5 && (
           <div className="relative mt-4">

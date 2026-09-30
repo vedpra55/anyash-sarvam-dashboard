@@ -21,6 +21,7 @@ import {
 import { getParentStatus, isConnected } from "@/lib/attention";
 import { parseMemory } from "@/lib/memory";
 import { formatPhone } from "@/lib/languages";
+import { readOnboarding, LIVING_SITUATIONS } from "@/lib/onboarding";
 import { latestCallTime, parseClock, formatClock } from "@/lib/callTime";
 import { SarvamCallRecord } from "@/lib/sarvam";
 import { useMarkDone, prefetchCall, memoryQuery } from "@/lib/queries";
@@ -34,13 +35,6 @@ interface ParentDetailCanvasProps {
   onEditClick: (parent: ParentItem) => void;
   isCalling?: boolean;
   backHref?: string;
-}
-
-function toList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((v) => (typeof v === "string" ? v : v?.name ? `${v.name}${v.dosage ? ` ${v.dosage}` : ""}` : ""))
-    .filter(Boolean);
 }
 
 function clockLabel(value?: string | null): string | null {
@@ -63,6 +57,12 @@ function CallTimingSection({ parent, onEdit }: { parent: ParentItem; onEdit: () 
       </dl>
     </Section>
   );
+}
+
+/** Marks answers the child gave that the parent has not confirmed yet. */
+function FromChildTag({ show }: { show: boolean }) {
+  if (!show) return null;
+  return <span className="text-[12px] text-zinc-500">From the family, not yet confirmed</span>;
 }
 
 function CallRow({ call, onOpen, onIntent }: { call: any; onOpen: () => void; onIntent: () => void }) {
@@ -131,17 +131,21 @@ export function ParentDetailCanvas({
   const lastConnected = calls.find(isConnected) || null;
   const review = parent.reviews?.[0];
   const nextStep = review?.next_action || review?.ai_recommended_action || "";
-  const child = parent.child_name || parent.facts?.family_member;
-  const relation = parent.facts?.relationship;
+  const profile = readOnboarding(parent);
+  const child = profile.child_name;
+  const relation = profile.relationship;
   const meta = [
-    parent.facts?.language,
+    profile.language,
     formatPhone(parent.phone_number),
     child ? `${child}${relation ? ` (${relation.toLowerCase()})` : ""}` : "",
   ].filter(Boolean);
 
-  const conditions = toList(parent.medical_baseline?.conditions);
-  const medications = toList(parent.medical_baseline?.medications);
-  const routines = (parent.routines || []).filter((r: any) => r?.activity);
+  const conditions = profile.conditions || [];
+  const medications = profile.medicines || [];
+  const routines = profile.other_routines || [];
+  const fromChild = (key: string) => parent.facts?.[key]?.source === "child" && !parent.facts?.[key]?.confirmed;
+  const healthFromChild = parent.medical_baseline?.conditions?.source === "child" || parent.medical_baseline?.medicines?.source === "child";
+  const living = LIVING_SITUATIONS.find((l) => l.id === profile.living_situation)?.label;
 
   const markDone = () => {
     if (status.cardId) markDoneMutation.mutate(status.cardId);
@@ -337,13 +341,28 @@ export function ParentDetailCanvas({
             }>
               <dl>
                 <Field label="Phone">{formatPhone(parent.phone_number)}</Field>
-                <Field label="Anya calls them">{parent.honorific || "—"}</Field>
-                <Field label="Language">{parent.facts?.language || "Hindi"}</Field>
+                <Field label="Anyash calls them">{parent.honorific || "—"}</Field>
+                <Field label="Language">{profile.language}</Field>
                 <Field label="Family">{child ? `${child}, their ${(relation || "child").toLowerCase()}` : "—"}</Field>
               </dl>
             </Section>
             <CallTimingSection parent={parent} onEdit={() => onEditClick(parent)} />
-            <Section title="Health">
+            <Section title="Home and life" aside={<FromChildTag show={["living_situation", "enjoys"].some(fromChild)} />}>
+              <dl>
+                <Field label="Lives">{living || <span className="text-zinc-500">Not given</span>}</Field>
+                <Field label="Help at home">{profile.household_help || <span className="text-zinc-500">Not given</span>}</Field>
+                <Field label="Wakes">{clockLabel(profile.wake_time) || <span className="text-zinc-500">Not given</span>}</Field>
+                <Field label="Enjoys">{profile.enjoys || <span className="text-zinc-500">Not given</span>}</Field>
+                <Field label="Avoid">{profile.avoid_topics || <span className="text-zinc-500">Nothing noted</span>}</Field>
+              </dl>
+            </Section>
+            {profile.child_worry && (
+              <Section title={`${child || "The family"}'s worry`}>
+                <p className="text-[14px] text-zinc-100 leading-6">{profile.child_worry}</p>
+                <p className="mt-1 text-[12px] text-zinc-600">Only shown here. Never sent to Anyash or said to the parent.</p>
+              </Section>
+            )}
+            <Section title="Health" aside={<FromChildTag show={healthFromChild} />}>
               <dl>
                 <Field label="Conditions">
                   {conditions.length ? conditions.map((c, i) => <div key={i}>{c}</div>) : <span className="text-zinc-500">None recorded</span>}
@@ -356,7 +375,7 @@ export function ParentDetailCanvas({
             <Section title="Daily routine">
               {routines.length ? (
                 <dl>
-                  {routines.map((r: any, i: number) => (
+                  {routines.map((r, i) => (
                     <Field key={i} label={r.time && r.time !== "Daily Routine" ? r.time : "—"}>
                       {r.activity}
                     </Field>

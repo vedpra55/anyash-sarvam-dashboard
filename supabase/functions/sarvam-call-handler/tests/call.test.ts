@@ -193,3 +193,10 @@ Deno.test("a payload with the new system variables is never legacy, even if empt
   assertEquals(isLegacyPayload({ call_duration_seconds: "", interaction_transcript: "" }), false);
   assertEquals(isLegacyPayload({ interaction_transcript: [] }), false);
 });
+
+Deno.test("consolidation prompt carries the family's AVOID and NOTE lines forward", () => {
+  const p = buildConsolidationPrompt({ callDateLabel: "Thu, 1 Oct 2026", callNumber: 1 });
+  for (const needle of ["AVOID:", "NOTE:", "(from family, unconfirmed)", "Keep the AVOID and NOTE lines exactly as they are"]) {
+    assertEquals(p.includes(needle), true, needle);
+  }
+});
