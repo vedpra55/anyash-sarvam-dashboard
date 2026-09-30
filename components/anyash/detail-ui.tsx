@@ -256,7 +256,20 @@ export function MemoryDocument({ memory }: { memory: ParsedMemory }) {
         )}
       </Section>
 
-      {(baselineRest.length > 0 || memory.routine.length > 0) && (
+      {memory.lifeThreads.length > 0 && (
+        <Section title="Life threads">
+          <ul className="space-y-1.5">
+            {memory.lifeThreads.map((item, i) => (
+              <li key={i} className="flex gap-3 text-[14px] text-zinc-100 leading-6">
+                <Dot tone="neutral" className="mt-[9px]" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {(baselineRest.length > 0 || memory.routine.length > 0 || memory.personal.length > 0) && (
         <Section title="About">
           <dl>
             {baselineRest.length > 0 && (
@@ -270,6 +283,13 @@ export function MemoryDocument({ memory }: { memory: ParsedMemory }) {
               <Field label="Routine">
                 {memory.routine.map((r, i) => (
                   <div key={i}>{r}</div>
+                ))}
+              </Field>
+            )}
+            {memory.personal.length > 0 && (
+              <Field label="Personal">
+                {memory.personal.map((p, i) => (
+                  <div key={i}>{p}</div>
                 ))}
               </Field>
             )}
@@ -304,7 +324,9 @@ export function summarizeDiff(diff: MemoryDiff): string {
   const parts: string[] = [];
   if (diff.watchlistAdded.length) parts.push(`${diff.watchlistAdded.length} new to watch`);
   if (diff.watchlistResolved.length) parts.push(`${diff.watchlistResolved.length} dropped`);
+  if (diff.lifeThreadsAdded.length) parts.push(`${diff.lifeThreadsAdded.length} life thread${diff.lifeThreadsAdded.length > 1 ? "s" : ""}`);
   if (diff.logAdded.length) parts.push("call logged");
+  if (diff.personalChanged) parts.push("personal updated");
   if (diff.routineChanged) parts.push("routine updated");
   if (diff.baselineChanged) parts.push("baseline updated");
   return parts.length ? parts.join(" · ") : "No changes";
@@ -316,9 +338,12 @@ export function MemoryDiffView({ diff, after }: { diff: MemoryDiff; after: Parse
     !diff.watchlistAdded.length &&
     !diff.watchlistResolved.length &&
     !diff.watchlistKept.length &&
+    !diff.lifeThreadsAdded.length &&
+    !diff.lifeThreadsClosed.length &&
     !diff.logAdded.length &&
     !diff.routineChanged &&
-    !diff.baselineChanged;
+    !diff.baselineChanged &&
+    !diff.personalChanged;
 
   if (nothing) {
     return <p className="text-[13px] text-zinc-500">Memory did not change on this call.</p>;
@@ -354,6 +379,26 @@ export function MemoryDiffView({ diff, after }: { diff: MemoryDiff; after: Parse
         </div>
       )}
 
+      {(diff.lifeThreadsAdded.length > 0 || diff.lifeThreadsClosed.length > 0) && (
+        <div>
+          <div className="text-[13px] text-zinc-500 mb-2">Life threads</div>
+          <ul className="space-y-1.5">
+            {diff.lifeThreadsAdded.map((t, i) => (
+              <li key={`la${i}`} className="flex gap-3 text-[13px] leading-6">
+                <span className="w-16 shrink-0 text-emerald-300">New</span>
+                <span className="text-zinc-100">{t}</span>
+              </li>
+            ))}
+            {diff.lifeThreadsClosed.map((t, i) => (
+              <li key={`lc${i}`} className="flex gap-3 text-[13px] leading-6">
+                <span className="w-16 shrink-0 text-zinc-500">Closed</span>
+                <span className="text-zinc-500 line-through decoration-zinc-600">{t}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {diff.logAdded.length > 0 && (
         <div>
           <div className="text-[13px] text-zinc-500">Added to recent calls</div>
@@ -365,13 +410,16 @@ export function MemoryDiffView({ diff, after }: { diff: MemoryDiff; after: Parse
         </div>
       )}
 
-      {(diff.routineChanged || diff.baselineChanged) && (
+      {(diff.routineChanged || diff.baselineChanged || diff.personalChanged) && (
         <dl>
           {diff.baselineChanged && after.baseline.length > 1 && (
             <Field label="Baseline now">{after.baseline.slice(1).join(" · ")}</Field>
           )}
           {diff.routineChanged && after.routine.length > 0 && (
             <Field label="Routine now">{after.routine.join(" · ")}</Field>
+          )}
+          {diff.personalChanged && after.personal.length > 0 && (
+            <Field label="Personal now">{after.personal.join(" · ")}</Field>
           )}
         </dl>
       )}

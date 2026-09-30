@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { X, Plus } from "lucide-react";
 import { ParentItem } from "./ParentsListColumn";
 import { LANGUAGES, RELATIONSHIPS } from "@/lib/languages";
+import { latestCallTime, formatClock } from "@/lib/callTime";
 import {
   Modal,
   Button,
@@ -139,6 +140,8 @@ export function ParentFormModal({
   const [conditions, setConditions] = useState<string[]>([]);
   const [medications, setMedications] = useState<string[]>([]);
   const [routines, setRoutines] = useState<RoutineRow[]>([]);
+  const [preferredCallTime, setPreferredCallTime] = useState("");
+  const [sleepTime, setSleepTime] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -161,7 +164,11 @@ export function ParentFormModal({
         }))
         .filter((r: RoutineRow) => r.activity)
     );
+    setPreferredCallTime(parent?.preferred_call_time || "");
+    setSleepTime(parent?.sleep_time || "");
   }, [open, parent]);
+
+  const latest = latestCallTime(sleepTime, preferredCallTime);
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -194,6 +201,8 @@ export function ParentFormModal({
                 family_member: childName.trim() || parent!.facts?.family_member,
               },
               routines: cleanRoutines,
+              preferred_call_time: preferredCallTime,
+              sleep_time: sleepTime,
               medical_baseline: {
                 ...(parent!.medical_baseline || {}),
                 conditions: cleanConditions,
@@ -212,6 +221,8 @@ export function ParentFormModal({
               child_name: childName.trim() || undefined,
               relationship,
               routines: cleanRoutines,
+              preferred_call_time: preferredCallTime,
+              sleep_time: sleepTime,
               conditions: cleanConditions,
               medications: cleanMedications,
             }),
@@ -287,6 +298,21 @@ export function ParentFormModal({
             </SelectInput>
           </FieldLabel>
         </div>
+
+        <SectionTitle>Call timing</SectionTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FieldLabel label="Best time to call" htmlFor="pf-call-time">
+            <TextInput id="pf-call-time" type="time" value={preferredCallTime} onChange={(e) => setPreferredCallTime(e.target.value)} />
+          </FieldLabel>
+          <FieldLabel label="Usually sleeps at" htmlFor="pf-sleep-time">
+            <TextInput id="pf-sleep-time" type="time" value={sleepTime} onChange={(e) => setSleepTime(e.target.value)} />
+          </FieldLabel>
+        </div>
+        <p className="text-[12.5px] text-zinc-500 -mt-1">
+          {latest
+            ? `No calls after ${formatClock(latest.minutes)} India time (${latest.basis === "sleep_time" ? "an hour before sleep" : "90 minutes after the call time"}).`
+            : "Add a sleep time so Anya never calls at bedtime."}
+        </p>
 
         <SectionTitle>Health</SectionTitle>
         <FieldLabel label="Conditions">

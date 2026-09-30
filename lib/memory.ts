@@ -4,15 +4,18 @@
  *
  * The memory is written by the sarvam-call-handler edge function in this shape:
  *
- *   TODAY: Mon, Sep 28, 2026 | CALL COUNT: 4
+ *   LAST UPDATED: Mon, 28 Sep 2026 | CALL COUNT: 4   (older memories: TODAY: ...)
  *   BASELINE: Poonam | Child: Ved (son) | No chronic meds
  *   ROUTINE: Wakes 5:00 AM; sleeps ~10:30 PM.
+ *   PERSONAL: Lives with son's family; grandson Aarav; enjoys bhajans.
  *
  *   ROLLING LOG (LAST 2 CALLS):
  *   • Mon, Sep 28, 2026 (Call #3):
  *     - Sleep: No problems reported.
  *   ACTIVE WATCHLIST:
  *   - Check whether right knee continues to improve.
+ *   LIFE THREADS:
+ *   - Power cut and heat yesterday.
  *
  * Anything that does not match is kept in `other` so nothing is hidden.
  */
@@ -23,12 +26,15 @@ export interface MemoryLogEntry {
 }
 
 export interface ParsedMemory {
+  /** Date of the LAST UPDATED (or older TODAY) line. */
   today?: string;
   callCount?: number;
   baseline: string[];
   routine: string[];
+  personal: string[];
   log: MemoryLogEntry[];
   watchlist: string[];
+  lifeThreads: string[];
   other: string[];
 }
 
@@ -43,19 +49,21 @@ export function parseMemory(raw?: string | null): ParsedMemory {
   const memory: ParsedMemory = {
     baseline: [],
     routine: [],
+    personal: [],
     log: [],
     watchlist: [],
+    lifeThreads: [],
     other: [],
   };
   if (!raw) return memory;
 
-  let section: "log" | "watchlist" | "other" = "other";
+  let section: "log" | "watchlist" | "lifeThreads" | "other" = "other";
 
   for (const rawLine of raw.split("\n")) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    const today = line.match(/^TODAY:\s*(.*)$/i);
+    const today = line.match(/^(?:TODAY|LAST UPDATED):\s*(.*)$/i);
     if (today) {
       const [datePart, ...rest] = today[1].split("|").map((s) => s.trim());
       memory.today = datePart;
@@ -79,6 +87,13 @@ export function parseMemory(raw?: string | null): ParsedMemory {
       continue;
     }
 
+    const personal = line.match(/^PERSONAL:\s*(.*)$/i);
+    if (personal) {
+      memory.personal = /^not shared yet\.?$/i.test(personal[1].trim()) ? [] : splitList(personal[1], /\s*;\s*/);
+      section = "other";
+      continue;
+    }
+
     if (/^ROLLING LOG\b/i.test(line)) {
       section = "log";
       continue;
@@ -86,6 +101,11 @@ export function parseMemory(raw?: string | null): ParsedMemory {
 
     if (/^ACTIVE WATCHLIST\b/i.test(line)) {
       section = "watchlist";
+      continue;
+    }
+
+    if (/^LIFE THREADS\b/i.test(line)) {
+      section = "lifeThreads";
       continue;
     }
 
@@ -111,9 +131,10 @@ export function parseMemory(raw?: string | null): ParsedMemory {
       }
     }
 
-    if (section === "watchlist") {
+    if (section === "watchlist" || section === "lifeThreads") {
       const bullet = line.match(/^[-–•*]\s*(.*)$/);
-      memory.watchlist.push((bullet ? bullet[1] : line).trim());
+      const item = (bullet ? bullet[1] : line).trim();
+      if (!/^none( yet)?\.?$/i.test(item)) memory[section].push(item);
       continue;
     }
 
@@ -127,8 +148,10 @@ export function isEmptyMemory(m: ParsedMemory): boolean {
   return (
     m.baseline.length === 0 &&
     m.routine.length === 0 &&
+    m.personal.length === 0 &&
     m.log.length === 0 &&
     m.watchlist.length === 0 &&
+    m.lifeThreads.length === 0 &&
     m.other.length === 0
   );
 }
@@ -142,9 +165,12 @@ export interface MemoryDiff {
   /** Items no longer on the watchlist (resolved, or reworded by the AI). */
   watchlistResolved: string[];
   watchlistKept: string[];
+  lifeThreadsAdded: string[];
+  lifeThreadsClosed: string[];
   logAdded: MemoryLogEntry[];
   baselineChanged: boolean;
   routineChanged: boolean;
+  personalChanged: boolean;
 }
 
 /** What changed in Anya's memory between two versions. */
@@ -154,15 +180,21 @@ export function diffMemory(before: ParsedMemory, after: ParsedMemory): MemoryDif
   // Titles vary ("Sun, Sep 27 (Call #2, 3 min)" vs "Sun, Sep 27 (Call #2)"), so match by date.
   const logKey = (e: MemoryLogEntry) => normalize(e.title.split("(")[0]);
   const beforeLog = new Set(before.log.map(logKey));
+  const beforeThreads = new Set(before.lifeThreads.map(normalize));
+  const afterThreads = new Set(after.lifeThreads.map(normalize));
 
   return {
     watchlistAdded: after.watchlist.filter((w) => !beforeWatch.has(normalize(w))),
     watchlistResolved: before.watchlist.filter((w) => !afterWatch.has(normalize(w))),
     watchlistKept: after.watchlist.filter((w) => beforeWatch.has(normalize(w))),
+    lifeThreadsAdded: after.lifeThreads.filter((t) => !beforeThreads.has(normalize(t))),
+    lifeThreadsClosed: before.lifeThreads.filter((t) => !afterThreads.has(normalize(t))),
     logAdded: after.log.filter((e) => !beforeLog.has(logKey(e))),
     baselineChanged:
       normalize(before.baseline.join(" ")) !== normalize(after.baseline.join(" ")),
     routineChanged:
       normalize(before.routine.join(" ")) !== normalize(after.routine.join(" ")),
+    personalChanged:
+      normalize(before.personal.join(" ")) !== normalize(after.personal.join(" ")),
   };
 }

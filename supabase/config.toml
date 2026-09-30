@@ -1,0 +1,5 @@
+project_id = "vsljapxjdhqqaqvurajp"
+
+# Sarvam calls this without a Supabase JWT.
+[functions.sarvam-call-handler]
+verify_jwt = false

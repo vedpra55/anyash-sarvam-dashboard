@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import { readCallTimes } from "@/lib/callTime";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,13 @@ export async function PATCH(
     const body = await req.json();
     const supabase = getServiceSupabase();
 
+    const callTimes = readCallTimes(body);
+    if ("error" in callTimes) {
+      return NextResponse.json({ error: callTimes.error }, { status: 400 });
+    }
+
     const updatePayload: Record<string, any> = {
+      ...callTimes.values,
       updated_at: new Date().toISOString(),
     };
 

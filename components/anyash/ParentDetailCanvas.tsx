@@ -21,6 +21,7 @@ import {
 import { getParentStatus, isConnected } from "@/lib/attention";
 import { parseMemory } from "@/lib/memory";
 import { formatPhone } from "@/lib/languages";
+import { latestCallTime, parseClock, formatClock } from "@/lib/callTime";
 import { SarvamCallRecord } from "@/lib/sarvam";
 import { useMarkDone, prefetchCall, memoryQuery } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,6 +41,28 @@ function toList(value: unknown): string[] {
   return value
     .map((v) => (typeof v === "string" ? v : v?.name ? `${v.name}${v.dosage ? ` ${v.dosage}` : ""}` : ""))
     .filter(Boolean);
+}
+
+function clockLabel(value?: string | null): string | null {
+  const minutes = parseClock(value);
+  return minutes === null ? null : formatClock(minutes);
+}
+
+function CallTimingSection({ parent, onEdit }: { parent: ParentItem; onEdit: () => void }) {
+  const latest = latestCallTime(parent.sleep_time, parent.preferred_call_time);
+  return (
+    <Section title="Call timing" aside={
+      <button onClick={onEdit} className="text-[12.5px] text-zinc-400 hover:text-white">Edit</button>
+    }>
+      <dl>
+        <Field label="Best time to call">{clockLabel(parent.preferred_call_time) || <span className="text-zinc-500">Not set</span>}</Field>
+        <Field label="Usually sleeps at">{clockLabel(parent.sleep_time) || <span className="text-zinc-500">Not set</span>}</Field>
+        <Field label="Latest call">
+          {latest ? `${formatClock(latest.minutes)} India time` : <span className="text-zinc-500">No limit. Add a sleep time.</span>}
+        </Field>
+      </dl>
+    </Section>
+  );
 }
 
 function CallRow({ call, onOpen, onIntent }: { call: any; onOpen: () => void; onIntent: () => void }) {
@@ -319,6 +342,7 @@ export function ParentDetailCanvas({
                 <Field label="Family">{child ? `${child}, their ${(relation || "child").toLowerCase()}` : "—"}</Field>
               </dl>
             </Section>
+            <CallTimingSection parent={parent} onEdit={() => onEditClick(parent)} />
             <Section title="Health">
               <dl>
                 <Field label="Conditions">

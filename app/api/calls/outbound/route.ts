@@ -7,8 +7,12 @@ import {
 import { buildSarvamVariables, resolveCallCount } from "@/lib/prompts";
 import { getServiceSupabase } from "@/lib/supabase";
 import { getSavedAgentVersion } from "@/lib/settings";
+import { checkCallTime } from "@/lib/callTime";
 
 export const dynamic = "force-dynamic";
+
+const PROFILE_COLUMNS =
+  "id, parent_name, current_user_context, number_of_calls, phone_number, facts, preferred_call_time, sleep_time";
 
 /**
  * Reads the variable names out of Sarvam's 422 error, e.g.
@@ -65,6 +69,7 @@ export async function POST(req: NextRequest) {
       profile,
     );
     const normalizedPhone = profile.parentPhone ? profile.parentPhone.replace(/[^\d+]/g, "") : "";
+    let refusedReason: string | null = null;
 
     try {
       const supabase = getServiceSupabase();
@@ -75,7 +80,7 @@ export async function POST(req: NextRequest) {
       if (normalizedPhone) {
         const { data: profByPhone } = await supabase
           .from("parent_profiles")
-          .select("id, current_user_context, number_of_calls, phone_number")
+          .select(PROFILE_COLUMNS)
           .or(`phone_number.eq.${normalizedPhone},phone_number.ilike.%${last10}%`)
           .maybeSingle();
         if (profByPhone) {
@@ -87,7 +92,7 @@ export async function POST(req: NextRequest) {
       if (!dbProfile && profile.id) {
         const { data: profById } = await supabase
           .from("parent_profiles")
-          .select("id, current_user_context, number_of_calls, phone_number")
+          .select(PROFILE_COLUMNS)
           .eq("id", profile.id)
           .maybeSingle();
 
@@ -111,12 +116,16 @@ export async function POST(req: NextRequest) {
             number_of_calls: callCount,
             current_user_context: `TODAY: Initial Check-in | CALL COUNT: ${callCount}\nBASELINE: ${profile.parentName || "Parent"} | Child: ${profile.childName || "Family"}\nACTIVE WATCHLIST:\n- First call check-in.`,
           })
-          .select("id, current_user_context, number_of_calls, phone_number")
+          .select(PROFILE_COLUMNS)
           .single();
         dbProfile = newProfile;
       }
 
-      if (dbProfile) {
+      // Bedtime guard: never call after the parent's latest call time (India time).
+      const timeCheck = dbProfile ? checkCallTime(dbProfile) : null;
+      if (timeCheck && !timeCheck.allowed) {
+        refusedReason = timeCheck.reason;
+      } else if (dbProfile) {
         userId = dbProfile.id;
         fetchedUserContext = dbProfile.current_user_context || "";
 
@@ -163,8 +172,12 @@ export async function POST(req: NextRequest) {
       console.error("Failed to query/create parent_profiles in Supabase:", dbErr);
     }
 
+    if (refusedReason) {
+      console.warn(`Outbound call refused: ${refusedReason}`);
+      return NextResponse.json({ error: refusedReason, reason: "after_latest_call_time" }, { status: 409 });
+    }
+
     const callCountStr = String(callCount);
-    const isFirstCall = callCount <= 1;
 
     const apiKey = config?.sarvamApiKey || process.env.SARVAM_API_KEY || "";
     const orgId = config?.sarvamOrgId || process.env.SARVAM_ORG_ID || "";
@@ -219,21 +232,12 @@ export async function POST(req: NextRequest) {
         ? user_context_override.trim()
         : fetchedUserContext;
 
-      const isEnglish = validLanguage === "English";
-      const defaultGreeting = isFirstCall
-        ? (isEnglish
-            ? `Hello ${profile.parentName}! I am Anya calling on behalf of ${profile.childName} to check in on you. How are you feeling today?`
-            : `Namaste ${profile.honorific || profile.parentName}! Main Anya bol rahi hoon, ${profile.childName} ne aapka haal-chaal lene ke liye pehli baar phone karne ko kaha tha. Aap aaj kaisa mehsoos kar rahe hain?`)
-        : (isEnglish
-            ? `Hello ${profile.parentName}! I am Anya calling on behalf of ${profile.childName}. How are you feeling today?`
-            : `Namaste ${profile.honorific || profile.parentName}! Main Anya bol rahi hoon, ${profile.childName} ki taraf se. Aap aaj kaisa mehsoos kar rahe hain?`);
-
-      // If initial_bot_message_override was passed, respect it.
-      // If language is English or Hindi, use our tailored greeting.
-      // For other Indic languages, omit initial_bot_message to allow Sarvam's native audio intro to speak in that language.
-      const effectiveBotMessage = (initial_bot_message_override !== undefined && initial_bot_message_override.trim())
-        ? initial_bot_message_override.trim()
-        : (isEnglish || validLanguage === "Hindi" ? defaultGreeting : undefined);
+      // The agent's own prompt and intro open the call. A greeting is sent only
+      // when a manual test passes initial_bot_message_override.
+      const botMessageOverride =
+        typeof initial_bot_message_override === "string" && initial_bot_message_override.trim()
+          ? initial_bot_message_override.trim()
+          : undefined;
 
       const sarvamPayload: any = {
         app_config: {
@@ -253,7 +257,7 @@ export async function POST(req: NextRequest) {
             initial_language_name: validLanguage,
             user_id: userId,
             user_context: effectiveUserContext,
-            ...(effectiveBotMessage ? { initial_bot_message: effectiveBotMessage } : {}),
+            ...(botMessageOverride ? { initial_bot_message: botMessageOverride } : {}),
           },
         },
         user_config: {

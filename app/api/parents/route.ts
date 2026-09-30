@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { fetchSarvamCalls, linkCallsToParents } from "@/lib/sarvam";
+import { readCallTimes } from "@/lib/callTime";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +116,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const callTimes = readCallTimes(body);
+    if ("error" in callTimes) {
+      return NextResponse.json({ error: callTimes.error }, { status: 400 });
+    }
+
     const supabase = getServiceSupabase();
     const cleanPhone = phone_number.replace(/[^\d+]/g, "");
     const last10 = cleanPhone.slice(-10);
@@ -174,6 +180,7 @@ export async function POST(req: NextRequest) {
             conditions,
             medications,
           },
+          ...callTimes.values,
           updated_at: new Date().toISOString(),
         })
         .eq("id", existing.id)
@@ -206,6 +213,7 @@ export async function POST(req: NextRequest) {
           conditions,
           medications,
         },
+        ...callTimes.values,
         current_user_context: newContext,
       })
       .select()

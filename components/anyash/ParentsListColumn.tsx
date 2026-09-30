@@ -24,6 +24,10 @@ export interface ParentItem {
   created_at?: string;
   updated_at?: string;
   number_of_calls?: number;
+  /** "HH:MM" India time. */
+  preferred_call_time?: string | null;
+  /** "HH:MM" India time. */
+  sleep_time?: string | null;
 }
 
 interface ParentsListColumnProps {
