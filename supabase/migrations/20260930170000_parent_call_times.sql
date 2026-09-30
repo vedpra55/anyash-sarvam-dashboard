@@ -28,7 +28,10 @@ with sleep_routine as (
   where p.sleep_time is null
     and (r->>'activity') ilike '%sleep%'
     and upper(trim(r->>'time')) ~ '^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$'
-  order by p.id
+    -- Night-time only (7 PM to 2:59 AM), so an afternoon nap is never read as bedtime.
+    and to_char(to_timestamp(upper(trim(r->>'time')), 'HH12:MI AM'), 'HH24') in
+        ('19','20','21','22','23','00','01','02')
+  order by p.id, to_timestamp(upper(trim(r->>'time')), 'HH12:MI AM') desc
 )
 update public.parent_profiles p
 set sleep_time = to_char(to_timestamp(s.t, 'HH12:MI AM'), 'HH24:MI')

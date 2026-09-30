@@ -50,6 +50,7 @@ function fakeSupabase(tables: Record<string, Row[]>) {
       },
       order: () => builder,
       limit: () => builder,
+      // A plain await returns all matching rows.
       update: (v: Row) => ((op = "update"), (values = v), builder),
       upsert: (v: Row) => ((op = "upsert"), (values = v), builder),
       insert: (v: Row) => ((op = "insert"), (values = v), Promise.resolve(run())),
@@ -170,9 +171,46 @@ Deno.test("a repeated delivery of the same call does not count it twice", async 
   assertEquals(w.tables.decision_cards.length, 1);
 });
 
+Deno.test("a delivery arriving while another is consolidating is skipped", async () => {
+  const w = world();
+  w.tables.call_records.push({
+    id: "r0",
+    attempt_id: "att-busy",
+    metadata: { processing_started_at: new Date(Date.now() - 20_000).toISOString() },
+  });
+  const res: any = await recordCallAssessment(
+    w.client,
+    { attempt_id: "att-busy", user_id: PARENT_ID, call_outcome: "meaningful_checkin", call_duration_seconds: 80, interaction_transcript: transcript(4) },
+    "",
+  );
+  assertEquals(res.action, "duplicate_ignored");
+  assertEquals(w.tables.parent_profiles[0].number_of_calls, 4);
+});
+
+Deno.test("an ambiguous parent name is not guessed", async () => {
+  const w = world();
+  w.tables.parent_profiles.push({ id: "p2", parent_name: "Salilesh Kumar", number_of_calls: 2 });
+  await recordCallAssessment(
+    w.client,
+    { attempt_id: "att-name", parent_name: "Salilesh", call_outcome: "meaningful_checkin", call_duration_seconds: 80, interaction_transcript: transcript(4) },
+    "",
+  );
+  assertEquals(w.tables.parent_profiles[0].number_of_calls, 4);
+  assertEquals(w.tables.parent_profiles[1].number_of_calls, 2);
+  assertEquals(w.tables.call_records[0].parent_id, null);
+});
+
 Deno.test("a row the dashboard webhook created first is completed, not duplicated", async () => {
   const w = world();
-  w.tables.call_records.push({ id: "r1", attempt_id: "att-hook", call_status: "connected", duration_seconds: 0, metadata: { source: "webhook" } });
+  w.tables.call_records.push({
+    id: "r1",
+    attempt_id: "att-hook",
+    call_status: "connected",
+    duration_seconds: 0,
+    interaction_id: "20260930/hook",
+    audio_url: "https://rec/1.mp3",
+    metadata: { source: "webhook" },
+  });
   await recordCallAssessment(
     w.client,
     { attempt_id: "att-hook", user_id: PARENT_ID, call_outcome: "meaningful_checkin", call_duration_seconds: 80, interaction_transcript: transcript(4) },
@@ -180,5 +218,8 @@ Deno.test("a row the dashboard webhook created first is completed, not duplicate
   );
   assertEquals(w.tables.call_records.length, 1);
   assertEquals(w.tables.call_records[0].duration_seconds, 80);
+  // Values only the webhook knew are kept.
+  assertEquals(w.tables.call_records[0].interaction_id, "20260930/hook");
+  assertEquals(w.tables.call_records[0].audio_url, "https://rec/1.mp3");
   assertEquals(w.tables.parent_profiles[0].number_of_calls, 5);
 });

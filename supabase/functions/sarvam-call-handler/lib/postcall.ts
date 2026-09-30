@@ -21,6 +21,8 @@ import { buildConsolidationPrompt, MEMORY_WORD_LIMIT } from "../prompts/consolid
 
 const AI_MODEL = "gpt-6-luna";
 const AI_MODEL_LABEL = `${AI_MODEL} (reasoning_effort: medium)`;
+/** A delivery that started consolidating this recently is treated as in flight. */
+const IN_FLIGHT_MS = 5 * 60_000;
 
 /** Post-call variables Sarvam extracts; copied to call_records as-is. */
 const EXTRACTED_FIELDS = [
@@ -47,15 +49,15 @@ async function findParent(supabase: SupabaseClient, userId: string | null, paren
     const { data } = await supabase.from("parent_profiles").select("*").eq("id", userId).maybeSingle();
     if (data) return data;
   }
+  // Fall back to the name only when it identifies exactly one parent.
   if (parentName) {
     const { data } = await supabase
       .from("parent_profiles")
       .select("*")
       .ilike("parent_name", `%${parentName}%`)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (data) return data;
+      .limit(2);
+    if (data?.length === 1) return data[0];
+    if (data && data.length > 1) console.warn(`Parent name "${parentName}" matches several profiles; not guessing`);
   }
   return null;
 }
@@ -133,27 +135,34 @@ export async function recordCallAssessment(
     parentProfile?.current_user_context || initialMemory(parentName, childName);
   const currentCallNumber = Number(vars.number_of_calls ?? parentProfile?.number_of_calls ?? 1) || 1;
 
-  // Sarvam retries on_end tools that time out. A call already consolidated is left alone.
+  // Sarvam retries on_end tools that time out. A call already consolidated,
+  // or being consolidated by an earlier delivery, is left alone.
   const { data: existing } = await supabase
     .from("call_records")
     .select("id, metadata")
     .eq("attempt_id", attemptId)
     .maybeSingle();
-  if (existing?.metadata?.memory_written) {
-    console.log(`[${attemptId}] already processed; skipping duplicate delivery`);
+  const startedAt = Date.parse(existing?.metadata?.processing_started_at || "");
+  if (existing?.metadata?.memory_written || Date.now() - startedAt < IN_FLIGHT_MS) {
+    console.log(`[${attemptId}] already processed or in flight; skipping duplicate delivery`);
     return { success: true, action: "duplicate_ignored", attempt_id: attemptId };
   }
 
+  // Values the dashboard webhook may already have saved are only written when known.
+  const knownCallFacts: Record<string, unknown> = {};
+  if (interactionId) knownCallFacts.interaction_id = interactionId;
+  if (duration.seconds > 0) knownCallFacts.duration_seconds = duration.seconds;
+  const audioUrl = body.audio_url || body.recording_url;
+  if (audioUrl) knownCallFacts.audio_url = audioUrl;
+
   const baseRecord = {
     attempt_id: attemptId,
-    interaction_id: interactionId,
     user_identifier: userIdentifier,
     parent_id: parentId,
     parent_phone: parentPhone,
     parent_name: parentName,
     child_name: childName,
-    duration_seconds: duration.seconds,
-    audio_url: body.audio_url || body.recording_url || null,
+    ...knownCallFacts,
     ...extracted(vars),
     raw_agent_variables: rawVars,
     transcript,
@@ -203,8 +212,19 @@ export async function recordCallAssessment(
     };
   }
 
-  // A real call: consolidate memory and write everything. The on_end tool runs
-  // as the call ends, so the server clock dates the call.
+  // A real call: claim it first, so a retry during the slow model call is skipped.
+  const { error: claimErr } = await supabase.from("call_records").upsert(
+    {
+      ...baseRecord,
+      call_status: "connected",
+      metadata: { user_id: parentId || userId, processing_started_at: new Date().toISOString() },
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "attempt_id" },
+  );
+  if (claimErr) console.error("Error claiming call_records row:", claimErr);
+
+  // The on_end tool runs as the call ends, so the server clock dates the call.
   const when = new Date();
   const callDateLabel = istDateLabel(when);
   const logDate = istIsoDate(when);
@@ -347,6 +367,7 @@ export async function recordCallAssessment(
           legacy_payload: legacy,
           memory_words: memoryWords,
           memory_written: Boolean(parentId),
+          processing_started_at: when.toISOString(),
           reasoning_tokens: usage?.completion_tokens_details?.reasoning_tokens ?? 0,
           total_tokens: usage?.total_tokens ?? 0,
           processed_at: new Date().toISOString(),
