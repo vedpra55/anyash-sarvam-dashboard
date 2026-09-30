@@ -95,10 +95,24 @@ and the detail are separate screens).
   - *Calls*: every call; opens the call drawer.
   - *Memory* (`MemoryPanel.tsx`): Anya's memory as sections, edit in place,
     history of how it changed per call.
-  - *Profile*: contact, conditions, medicines, routine.
+  - *Profile*: contact, call timing, home and life, the child's worry
+    (dashboard only), conditions, medicines, routine. Answers from the
+    family that the parent hasn't confirmed are marked.
 - **Pop-ups** (`useParentActions.tsx`): Call (`CallModal.tsx`), Add/Edit
-  parent with structured conditions, medicines and routine
-  (`ParentFormModal.tsx`), Remove.
+  parent with the child's onboarding questions (`ParentFormModal.tsx` +
+  `OnboardingForm.tsx`), Remove.
+- **Copy onboarding link** (list header): creates a single-use link to
+  `/onboard/[token]` (14 days) and copies it.
+
+### `/onboard/[token]` — the child's onboarding form (public)
+Mobile-first page without the dashboard shell. The same questions as the
+Add pop-up (`lib/onboarding.ts`): basics, household, day, health, life,
+things to avoid, and the child's worry. Saving creates the parent and uses
+up the link; a phone already on file is refused. Every answer is stored as
+`{ value, source: "child", confirmed: false }`, and the starting
+`current_user_context` is written from a fixed template (PERSON / DAY /
+HEALTH / LIFE / AVOID / NOTE). `child_worry` never reaches the agent.
+Examples: `docs/phase2/`.
 
 ### `/calls` — Calls
 File: `app/calls/page.tsx`
@@ -186,13 +200,15 @@ TanStack Query 5.
 | Route | Method | What it does |
 |---|---|---|
 | `/api/parents` | GET | All `parent_profiles` + Sarvam calls (linked by phone) + last 14 `daily_health_logs` + recent AI reviews (`call_records` + `decision_cards`) each |
-| `/api/parents` | POST | Create parent (or update existing with same phone). Accepts structured `routines`, `conditions`, `medications`. Seeds `current_user_context` and `facts` |
+| `/api/parents` | POST | Create a parent from the onboarding form (or update the one with the same phone). Writes the starting `current_user_context` |
 | `/api/parents/[id]/memory` | GET | Current memory plus how it changed on each call |
 | `/api/decisions/[id]` | PATCH | Mark a decision card's follow-up done / not done |
 | `/api/calls/details` | GET | AI assessment, decision card and health log for one call (`attempt_id`) |
-| `/api/parents/[id]` | PATCH | Update parent fields; keeps the initial 2-line context in sync with names |
+| `/api/parents/[id]` | PATCH | `{ profile }` saves the onboarding form (starting memory rewritten only before the first real call); other fields (e.g. `current_user_context`) are saved as given |
+| `/api/onboarding/links` | POST | New single-use onboarding link |
+| `/api/onboarding/[token]` | GET / POST | Check a link / save the child's form and use up the link |
 | `/api/parents/[id]` | DELETE | Deletes daily logs, call records, decision cards, then the parent |
-| `/api/calls/outbound` | POST | Resolves/creates the Supabase profile, syncs call count & context, calls Sarvam Outbound API. Falls back to a **simulated** attempt if telephony env vars are missing |
+| `/api/calls/outbound` | POST | Finds the Supabase profile (refuses numbers with no profile, and calls after the latest call time), syncs call count & context, calls Sarvam Outbound API. Falls back to a **simulated** attempt if telephony env vars are missing |
 | `/api/insights` | GET | Trial call ledger for Insights: Sarvam attempts + evaluations joined with Supabase reviews, logs and follow-ups; test calls counted by reason |
 | `/api/calls` | GET | Sarvam Analytics attempts (outbound, non-test, since 25 Sep 2026), normalised, name-matched to parents, with the AI verdict from `call_records` |
 | `/api/calls/transcript` | GET | Transcript by `interaction_id` from Sarvam; falls back to `call_records.transcript` |
@@ -275,8 +291,15 @@ Migrations: `create_call_records_and_decision_cards`,
 `id`, `phone_number`, `parent_name`, `child_name`, `honorific` (default
 "Mummy Ji"), `number_of_calls` (default 1), `last_call_timestamp`,
 `current_user_context` (the rolling memory injected into the next call),
-`facts` jsonb (relationship, language, family_member), `routines` jsonb,
-`medical_baseline` jsonb (conditions), timestamps.
+`language`, `preferred_call_time`, `sleep_time` ("HH:MM" India time),
+`facts` jsonb (relationship, living_situation, household_help, enjoys,
+avoid_topics, child_worry as `{value, source, confirmed}`; plain language
+and family_member), `routines` jsonb (`{name: wake|sleep, time, ...}` plus
+older `{time, activity}` rows), `medical_baseline` jsonb (conditions,
+medicines), timestamps.
+
+**`onboarding_tokens`**: `token_hash` (SHA-256 of the link token), `expires_at`,
+`used_at`, `parent_id`. Service role only.
 
 **`daily_health_logs`** (one per parent per day — unique `parent_id, log_date`)
 `parent_id` → parent_profiles, `call_id` → call_records, `log_date`,
