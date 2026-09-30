@@ -40,11 +40,14 @@ Call ends → Sarvam fills post-call variables (call_summary, call_outcome,
             health_update, parent_mood, follow_up_needed, ...)
    │
    ├──► Webhook  POST /api/webhooks/sarvam  (this app)
-   │       increments parent_profiles.number_of_calls, updates CALL COUNT
+   │       only fills call status / duration on call_records by attempt_id
    │
-   └──► Edge Function sarvam-call-handler (post-call "record_call_assessment")
-           • OpenAI model builds: daily health log, new rolling user_context
-             (≤180 words), decision card
+   └──► Edge Function sarvam-call-handler (Sarvam on_end tool
+        "record_call_assessment"; the only post-call writer)
+           • real call = ≥45 s, ≥3 parent turns, conversational call_outcome;
+             anything else is saved as no_conversation and changes nothing
+           • OpenAI model builds: daily health log, new user_context
+             (≤260 words, with PERSONAL and LIFE THREADS), decision card
            • upserts daily_health_logs, call_records; inserts decision_cards;
              updates parent_profiles.current_user_context / number_of_calls
    ▼
@@ -52,12 +55,9 @@ Dashboard reads Sarvam Analytics (attempts, transcripts, recordings)
 + Supabase (profiles, daily logs) to show everything.
 ```
 
-> ⚠️ Both the app webhook and the Edge Function increment
-> `number_of_calls`. If both run for the same call the counter can advance
-> by 2. It is not clear from the code or Sarvam config what currently
-> invokes the Edge Function's post-call path (the outbound call's
-> `webhook_config.url` points at the app route) — confirm and keep only one
-> writer.
+The Edge Function source lives in `supabase/functions/sarvam-call-handler`
+(tests: `cd supabase/functions/sarvam-call-handler && deno test`). The live
+Sarvam prompt is saved under `prompts/` before each edit.
 
 ---
 
@@ -201,7 +201,7 @@ TanStack Query 5.
 | `/api/analytics` | GET | Overview + goal metrics (connectivity, duration, cost in INR, turns, language split) (not used by the UI) |
 | `/api/health/analyze` | POST | Legacy keyword heuristic (chest/knee/sleep/missed meds) → decision card |
 | `/api/settings` | GET / PUT | Read / save the Sarvam agent version used for outbound calls (stored in `app_settings`) |
-| `/api/webhooks/sarvam` | POST | Sarvam post-call webhook: bumps `number_of_calls` on a successful call and updates `CALL COUNT` in the context |
+| `/api/webhooks/sarvam` | POST | Sarvam post-call webhook: fills `call_status` / `duration_seconds` on the `call_records` row for the attempt (creates a minimal row for unanswered calls) |
 
 Test calls are filtered out (`lib/sarvam.ts#isTestCall`): web sessions
 (contact contains `@`), dummy numbers `9876543210` / `1234567890`, or
@@ -303,20 +303,29 @@ post-call variable, `raw_agent_variables`, `transcript`,
 **`app_settings`** (key/value settings edited from the dashboard)
 `key` (PK), `value` jsonb, `updated_at`. Currently holds `sarvam_app_version`.
 
-### Edge Function `sarvam-call-handler` (v14, `verify_jwt: false`)
+### Edge Function `sarvam-call-handler` (`verify_jwt: false`, source in `supabase/functions/`)
 
 Two modes on POST:
 
 1. **`query_parent_history`** (in-call tool): loads the last 7
    `daily_health_logs` for `user_id` and returns a short Hinglish answer for
    the topic (e.g. "Kal (28 Sep) ko BP 130/85 tha").
-2. **Post-call assessment** (any other payload): if the call connected, sends
+2. **Post-call assessment** (Sarvam's on_end tool, which also sends
+   `attempt_id`, `interaction_id`, `call_duration_seconds` and the
+   transcript): a real call (≥45 s, ≥3 parent turns, call_outcome not
+   no_conversation / busy_or_refused / wrong_person / test_call) sends
    previous context + last 2 daily logs + Sarvam variables + transcript to
    OpenAI (`gpt-6-luna`, reasoning effort medium, JSON output). Writes the
-   daily log, the new `current_user_context` (TODAY / BASELINE / ROUTINE /
-   ROLLING LOG / ACTIVE WATCHLIST), `call_records`, and a `decision_cards`
-   row; increments `number_of_calls`. Unconnected calls are logged without
-   touching the profile.
+   daily log, the new `current_user_context` (LAST UPDATED / BASELINE /
+   ROUTINE / PERSONAL / ROLLING LOG / ACTIVE WATCHLIST / LIFE THREADS),
+   `call_records`, and a `decision_cards` row; increments `number_of_calls`.
+   Any other call is saved with `call_status = no_conversation` and the
+   profile is untouched. If the model fails, the previous memory is kept.
+
+**Bedtime guard**: `parent_profiles.preferred_call_time` / `sleep_time`
+("HH:MM", India time, editable on the parent's Profile tab). The outbound
+route refuses calls after sleep_time − 60 min (or preferred_call_time + 90
+min when sleep_time is empty) and returns the reason.
 
 ---
 
@@ -332,7 +341,7 @@ Env vars (`.env.example`):
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public Supabase client |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-side DB access (secret) |
 | `APP_BASE_URL` | Base for the Sarvam webhook URL (default `https://anyash.vercel.app`) |
-| `OPENAI_KEY` | Listed, but only the Edge Function uses OpenAI (set it as a Supabase function secret) |
+| `OPENAI_API_KEY` | Only the Edge Function uses OpenAI; set it as a Supabase function secret (`OPENAI_KEY` also accepted) |
 
 **Agent version** is set from the dashboard: sidebar → **Settings** → enter
 the version → Save. It is stored in Supabase `app_settings`
@@ -348,21 +357,16 @@ Node 20.9 or newer (required by Next.js 16).
 
 ## 7. Known issues / risks
 
-1. **Secret in Edge Function source** — `sarvam-call-handler` contains a
-   hard-coded OpenAI key as a fallback. Rotate that key and read it only from
-   a Supabase function secret.
+1. **Leaked OpenAI key** — earlier versions of `sarvam-call-handler`
+   (up to v14) contained a hard-coded OpenAI key. The code now reads only the
+   function secret; rotate the old key.
 2. **Edge Function is unauthenticated** (`verify_jwt: false`, no shared
-   secret). Anyone with the URL can read a parent's health history, and if no
-   `user_id` is sent it falls back to the **most recently updated parent**.
-   It can also write call records. Add a shared-secret header checked by the
-   function and configured in the Sarvam tool.
-3. **Double increment** of `number_of_calls` (webhook + Edge Function), see §1.
-4. **Heuristic decision cards** in `/api/calls/sync`, `/api/health/analyze`
-   and the webhook are keyword-based and separate from the AI cards stored in
+   secret). Anyone with the URL who knows a parent id can read that parent's
+   health history, and can write call records. Add a shared-secret header
+   checked by the function and configured in the Sarvam tool.
+3. **Heuristic decision cards** in `/api/calls/sync` and `/api/health/analyze`
+   are keyword-based and separate from the AI cards stored in
    `decision_cards` (which the dashboard now reads). Those legacy routes are
    unused by the UI.
-5. **Fallback defaults** in the Edge Function (e.g. "HTN on Amlodipine",
-   "6:30 AM garden walk") can leak into a real parent's context if the AI
-   call fails.
-6. **No login**: the dashboard and its API routes are open to anyone with
+4. **No login**: the dashboard and its API routes are open to anyone with
    the URL.
