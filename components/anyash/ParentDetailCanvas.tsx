@@ -6,6 +6,7 @@ import { Phone, ChevronLeft, ChevronRight } from "lucide-react";
 import { ParentItem } from "./ParentsListColumn";
 import { CallDetailDrawer, AudioPlayer } from "./CallDetailDrawer";
 import { MemoryPanel } from "./MemoryPanel";
+import { ProgressiveMemory } from "./ProgressiveMemory";
 import { TrendStrip } from "./TrendStrip";
 import { Button, TabBar, EmptyState } from "./primitives";
 import {
@@ -325,12 +326,13 @@ export function ParentDetailCanvas({
 
         {activeTab === "memory" && (
           <div className="pt-8">
-            <div className="mb-6 text-[12.5px] text-zinc-500">
-              Progressive memory (briefs, threads, living profile):{" "}
-              <Link href={`/memory/${parent.id}`} className="text-zinc-300 hover:text-white underline underline-offset-2">
-                open
+            <div className="flex justify-end mb-2">
+              <Link href={`/memory/${parent.id}`} className="text-[12.5px] text-zinc-500 hover:text-white">
+                Open full page
               </Link>
             </div>
+            <ProgressiveMemory key={`pm-${parent.id}`} parentId={parent.id} />
+            <h3 className="mt-14 mb-4 text-[13px] font-medium text-zinc-500">Old memory (sent to the agent while in shadow mode)</h3>
             <MemoryPanel
               key={parent.id}
               parentId={parent.id}
