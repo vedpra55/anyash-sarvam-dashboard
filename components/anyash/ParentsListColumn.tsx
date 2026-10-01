@@ -72,29 +72,27 @@ export function ParentsListColumn({
   return (
     <div className={`w-full lg:w-[320px] shrink-0 lg:border-r border-ay-line flex flex-col min-h-0 ${className}`}>
       <div className="px-5 pt-6 pb-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-[20px] font-semibold text-white tracking-tight">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-[20px] font-semibold text-white tracking-tight min-w-0">
             Parents
             {parents.length > 0 && <span className="ml-2 text-[14px] font-normal text-zinc-600 tabular-nums">{parents.length}</span>}
           </h1>
-          <div className="flex items-center gap-1.5">
-            {onCopyLinkClick && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onCopyLinkClick}
-                disabled={isLinking}
-                title="Copy a single-use link the child can fill on their phone"
-                icon={<Link2 className="w-3.5 h-3.5" />}
-              >
-                {isLinking ? "Creating…" : "Copy onboarding link"}
-              </Button>
-            )}
-            <Button size="sm" onClick={onAddParentClick} icon={<Plus className="w-3.5 h-3.5" />}>
-              Add
-            </Button>
-          </div>
+          <Button size="sm" onClick={onAddParentClick} icon={<Plus className="w-3.5 h-3.5" />} className="shrink-0">
+            Add
+          </Button>
         </div>
+        {onCopyLinkClick && (
+          <button
+            type="button"
+            onClick={onCopyLinkClick}
+            disabled={isLinking}
+            title="Copy a single-use link the child can fill on their phone"
+            className="mt-2 -ml-1 inline-flex items-center gap-1.5 px-1 py-1 rounded text-[12.5px] text-zinc-500 hover:text-white disabled:opacity-50 disabled:pointer-events-none transition-colors"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            {isLinking ? "Creating link…" : "Copy onboarding link"}
+          </button>
+        )}
         {parents.length > 5 && (
           <div className="relative mt-4">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
