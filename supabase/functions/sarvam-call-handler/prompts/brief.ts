@@ -22,7 +22,7 @@ Input JSON:
 Write these parts, in this order, as short paragraphs without headings:
 1. Who they are, in 2 lines.
 2. How they like to talk (from the reflection and recent calls; if unknown, say to follow their lead).
-3. The threads to follow up: every item in threads_required, each with the parent's own words in quotes.
+3. The threads to follow up: every item in threads_required, each with the parent's own words in quotes. If threads_required is empty, leave this part out completely.
 4. One or two health areas from health_areas they have not talked about this week.
 5. Things to avoid (from sensitivities facts), or "nothing noted".
 
@@ -30,6 +30,7 @@ Rules:
 - Use only the input. Never invent a fact, a name, a symptom or a time. If something is unknown, leave it out.
 - No medical interpretation or advice.
 - Quote the parent's words exactly as given.
+- Write only facts and things to ask. Never write sentences about what is missing or empty, such as "no threads listed" or "nothing required".
 - Keep it between ${BRIEF_MIN_WORDS} and ${BRIEF_MAX_WORDS} words.
 
 Return JSON: { "brief": "..." }`;

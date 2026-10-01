@@ -175,6 +175,20 @@ const FORBIDDEN_KEYS = new Set(["child_worry"]);
 const normValue = (v: string) => normalizeWords(v).join(" ");
 
 /**
+ * Numbers in `value` that none of the evidence texts contain. The pieces of a
+ * number are compared one by one ("10:30" is 10 and 30), and a 12-hour clock
+ * hour may be written as 24-hour (10 -> 22). Totals the model worked out
+ * ("~7.5 hrs") are therefore caught.
+ */
+export function unsupportedNumbers(value: string, evidence: string[]): string[] {
+  const parts = (text: string) =>
+    (text.match(/\d+(?:[.:]\d+)*/g) || []).flatMap((n) => n.split(/[.:]/)).filter((x) => /[1-9]/.test(x)).map((x) => String(Number(x)));
+  const allowed = new Set(evidence.flatMap(parts));
+  for (const n of Array.from(allowed)) if (Number(n) <= 12) allowed.add(String(Number(n) + 12));
+  return (value.match(/\d+(?:[.:]\d+)*/g) || []).filter((tok) => parts(tok).some((x) => !allowed.has(x)));
+}
+
+/**
  * Turns proposed actions into safe changes: every change cites an event from
  * this call, targets a current fact that exists, and nothing is deleted.
  * An ADD for a key that already has a current fact becomes a CONFIRM (same
@@ -184,6 +198,8 @@ export function planFactChanges(
   proposed: ProposedAction[] | null | undefined,
   facts: ProfileFact[],
   callEventIds: Set<string>,
+  /** event id -> what the parent said (summary and quote); enables the numbers check. */
+  eventTexts?: Map<string, string>,
 ): { changes: FactChange[]; rejected: string[] } {
   const changes: FactChange[] = [];
   const rejected: string[] = [];
@@ -212,6 +228,12 @@ export function planFactChanges(
     if (!target && action === "ADD" && block && key) target = byKey.get(`${block}/${key}`);
     if (target && touched.has(target.id)) {
       rejected.push(`second change to fact ${target.id} in one call`);
+      continue;
+    }
+
+    const invented = value && eventTexts ? unsupportedNumbers(value, [target?.value || "", ...eventIds.map((id) => eventTexts.get(id) || "")]) : [];
+    if (invented.length) {
+      rejected.push(`value has numbers the parent did not say (${invented.join(", ")}): ${JSON.stringify(a)}`);
       continue;
     }
 
@@ -300,12 +322,14 @@ export function planThreads(
     if (m?.resolved) plan.close.push({ id: t.id, reason: "resolved", last_words: m.last_words, last_event_id: m.last_event_id });
     else if (m) {
       // Still open and talked about: ask again within 2 calls, or next call if it got serious.
+      // A casual "theek hai" never lowers a serious thread: keep the highest importance it has had.
+      const importance = Math.max(t.importance || 0, m.importance);
       plan.update.push({
         id: t.id,
-        importance: m.importance,
+        importance,
         last_words: m.last_words,
         last_event_id: m.last_event_id,
-        ...nextAsk(Math.max(m.importance, 3), callNumber, callDate),
+        ...nextAsk(Math.max(importance, 3), callNumber, callDate),
       });
     } else if (callNumber - t.last_mentioned_call >= FADE_AFTER_CALLS) {
       plan.close.push({ id: t.id, reason: "faded" });

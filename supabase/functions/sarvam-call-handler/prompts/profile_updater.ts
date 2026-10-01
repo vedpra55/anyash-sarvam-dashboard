@@ -31,6 +31,7 @@ Actions:
 Rules:
 - Durable means true beyond today. "Slept badly last night" is not a fact; "usually sleeps at 10:30" is.
 - Only what the parent stated. Never infer, never guess, never generalise from one day.
+- A value uses only what the parent said. No totals, averages, conversions or ranges the parent did not give (for example, never add up bed time and wake time into hours of sleep).
 - Never delete a fact. Never change a fact because of something Anyash said.
 - Every action cites the event ids it comes from.
 - "Theek hai" alone never confirms or updates a health fact.`;

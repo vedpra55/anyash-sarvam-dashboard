@@ -8,6 +8,7 @@ import {
   planThreads,
   quoteMatches,
   splitThreadsForBrief,
+  unsupportedNumbers,
   type ProfileFact,
   type Thread,
 } from "../lib/memory/rules.ts";
@@ -203,7 +204,8 @@ Deno.test("threads: talked about -> updated; resolved -> closed; silent 5 calls 
     6,
     "2026-09-30",
   );
-  assertEquals(plan.update.map((u) => [u.id, u.next_ask_call, u.last_words]), [["t1", 8, "haan aaram hai"]]);
+  // t1 was importance 4, so a casual mention keeps it: asked again on the next call.
+  assertEquals(plan.update.map((u) => [u.id, u.next_ask_call, u.last_words]), [["t1", 7, "haan aaram hai"]]);
   assertEquals(plan.close, [
     { id: "t2", reason: "resolved", last_words: "bijli aa gayi", last_event_id: "e2" },
     { id: "t3", reason: "faded" },
@@ -251,4 +253,43 @@ Deno.test("reflection: patterns must cite known events; at most 3", () => {
   );
   assertEquals(out.map((p) => p.pattern), ["Appetite drops on hot days", "p3", "p4"]);
   assertEquals(out[0].event_ids, ["a", "b"]);
+});
+
+// ---- fixes after the backfill review ---------------------------------------------
+
+Deno.test("threads: a casual mention never lowers a serious thread's importance", () => {
+  const plan = planThreads(
+    [ev({ id: "e1", category: "health", thread_id: "t1", importance: 2, parent_words: "theek hai" })],
+    [thread({ importance: 4 })],
+    5,
+    "2026-09-30",
+  );
+  assertEquals(plan.update[0].importance, 4);
+  assertEquals(plan.update[0].next_ask_call, 6); // still asked on the next call
+
+  const rise = planThreads([ev({ id: "e2", thread_id: "t1", importance: 5 })], [thread({ importance: 3 })], 5, "2026-09-30");
+  assertEquals(rise.update[0].importance, 5);
+});
+
+Deno.test("facts: numbers the parent did not say are caught (no ~7.5 hrs)", () => {
+  assertEquals(unsupportedNumbers("Very good sleep (10:30 PM - 6:00 AM, ~7.5 hrs)", ["goes to bed at 10:30 and gets up at six 6"]), ["7.5"]);
+  assertEquals(unsupportedNumbers("Sleeps at 10:30 PM, up at 6:00 AM", ["goes to bed at 10:30 and gets up at 6"]), []);
+  assertEquals(unsupportedNumbers("22:30", ["sleeps at 10:30"]), []); // 12-hour said, 24-hour written
+  assertEquals(unsupportedNumbers("Type 2 diabetes", ["has sugar"]), ["2"]);
+  assertEquals(unsupportedNumbers("Takes medicine", ["takes medicine"]), []);
+});
+
+Deno.test("facts: a value with an invented number is rejected, a stated one is kept", () => {
+  const texts = new Map([["e1", "She said she sleeps at 10:30 and wakes at 6 a.m."]]);
+  const { changes, rejected } = planFactChanges(
+    [
+      { action: "ADD", block: "health", key: "sleep_baseline", value: "Sleeps 10:30 to 6, about 7.5 hours", event_ids: ["e1"] },
+      { action: "ADD", block: "routine", key: "bedtime", value: "Sleeps at 10:30 PM", event_ids: ["e1"] },
+    ],
+    [],
+    new Set(["e1"]),
+    texts,
+  );
+  assertEquals(changes.map((c) => (c as any).key), ["bedtime"]);
+  assertEquals(rejected.length, 1);
 });

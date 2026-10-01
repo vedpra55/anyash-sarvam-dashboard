@@ -375,10 +375,14 @@ Two modes on POST:
    profile updater (ADD / CONFIRM / UPDATE, each citing event ids) → thread
    rules → reflection every 5th call. Models propose; `lib/memory/rules.ts`
    decides: quotes must match a parent turn, facts need evidence from this
-   call, thread timing is fixed. Prompts: `prompts/extractor.ts`,
-   `profile_updater.ts`, `reflection.ts`, `brief.ts`.
+   call, and a fact value may only contain numbers the parent said (no
+   worked-out totals like "~7.5 hrs"). Thread timing is fixed, and a thread
+   never loses importance because the parent later said "theek hai" about it.
+   Prompts: `prompts/extractor.ts`, `profile_updater.ts`, `reflection.ts`,
+   `brief.ts`.
 4. **`memory_backfill`** (needs `x-memory-secret`): replays a parent's past
-   real calls (2 per run) and then writes an `example` brief.
+   real calls (2 per run, each with a call number no other processed call of
+   that parent uses) and then writes an `example` brief.
 
 ### Edge Function `build-brief` (`verify_jwt: false`, needs `x-memory-secret`)
 
@@ -386,7 +390,9 @@ POST `{ parent_id, call_number?, mode? }` → a 120–150 word brief (who they
 are; how they like to talk; the threads due, with the parent's words; 1–2
 health areas not covered this week; things to avoid), saved to
 `call_briefs`. Required threads (due, and life threads from the last call)
-are checked; the brief is rewritten once, then any still missing are appended.
+are checked; the brief is rewritten once if it leaves one out or contains a
+sentence about what is missing ("no threads listed"), then any still missing
+are appended. With no required threads that part is simply left out.
 Deploy both functions with `scripts/bundle-functions.sh` (single-file bundles).
 
 **Bedtime guard**: `parent_profiles.preferred_call_time` / `sleep_time`

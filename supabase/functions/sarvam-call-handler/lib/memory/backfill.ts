@@ -10,6 +10,13 @@ import { classifyCall, countParentTurns, istIsoDate, normalizeTranscript } from 
 import { runMemoryPipeline } from "./pipeline.ts";
 import { buildBrief } from "./brief.ts";
 
+/** The wanted call number, or the next unused one when it is already taken. */
+export function pickCallNumber(wanted: number, used: Set<number>): number {
+  let n = wanted > 0 ? wanted : 1;
+  while (used.has(n)) n++;
+  return n;
+}
+
 export async function backfillParent(supabase: SupabaseClient, openAiKey: string, parentId: string, maxCalls = 2) {
   const { data: calls, error } = await supabase
     .from("call_records")
@@ -19,6 +26,14 @@ export async function backfillParent(supabase: SupabaseClient, openAiKey: string
     .is("memory_processed_at", null)
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
+
+  // Call numbers already used by this parent's processed calls; each replayed call gets a unique one.
+  const { data: taken } = await supabase
+    .from("call_records")
+    .select("call_number")
+    .eq("parent_id", parentId)
+    .not("memory_processed_at", "is", null);
+  const used = new Set<number>((taken || []).map((r: any) => Number(r.call_number)).filter(Number.isFinite));
 
   const results = [];
   let index = 0;
@@ -47,7 +62,8 @@ export async function backfillParent(supabase: SupabaseClient, openAiKey: string
       continue;
     }
     replayed++;
-    const callNumber = Number(call.call_number ?? call.raw_agent_variables?.number_of_calls) || index;
+    const callNumber = pickCallNumber(Number(call.call_number ?? call.raw_agent_variables?.number_of_calls) || index, used);
+    used.add(callNumber);
     const r = await runMemoryPipeline(supabase, openAiKey, {
       parentId,
       callRecordId: call.id,

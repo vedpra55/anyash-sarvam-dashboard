@@ -5,7 +5,8 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { fakeDb, stubModel } from "./fake_db.ts";
 import { runMemoryPipeline } from "../lib/memory/pipeline.ts";
-import { buildBrief, gatherBriefInputs } from "../lib/memory/brief.ts";
+import { buildBrief, gatherBriefInputs, META_SENTENCE } from "../lib/memory/brief.ts";
+import { pickCallNumber } from "../lib/memory/backfill.ts";
 import { EXTRACTOR_PROMPT } from "../prompts/extractor.ts";
 import { PROFILE_UPDATER_PROMPT } from "../prompts/profile_updater.ts";
 import { REFLECTION_PROMPT } from "../prompts/reflection.ts";
@@ -32,7 +33,7 @@ function world() {
     ],
     threads: [
       {
-        id: "t-knee", parent_id: P, title: "Right knee pain", kind: "health", status: "open", importance: 4,
+        id: "t-knee", parent_id: P, title: "Right knee pain", kind: "health", status: "open", importance: 3,
         opened_on: "2026-09-27", last_update: "2026-09-29", last_mentioned_call: 3, next_ask_call: 4,
         next_ask_on: "2026-09-30", last_words: "ghutne mein dard", last_event_id: null, closed_reason: null,
       },
@@ -207,4 +208,29 @@ Deno.test("brief: a thread the model keeps leaving out is appended, never lost",
   } finally {
     m.restore();
   }
+});
+
+Deno.test("brief: a sentence about what is missing is rewritten", async () => {
+  assertEquals(META_SENTENCE.test("There are no required follow-up threads listed."), true);
+  assertEquals(META_SENTENCE.test("Ask about the knee."), false);
+
+  const w = world();
+  w.tables.threads = []; // nothing required
+  const m = model({
+    brief: (_u, n) =>
+      n === 1 ? `Sunita lives alone. There are no required follow-up threads listed. ${words(110)}` : `Sunita lives alone. ${words(125)}`,
+  });
+  try {
+    const r = await buildBrief(w.client, "key", { parentId: P, callNumber: 5, mode: "shadow" });
+    assertEquals(r.checks.attempts, 2);
+    assert(!/no required/i.test(r.brief!));
+  } finally {
+    m.restore();
+  }
+});
+
+Deno.test("backfill: call numbers stay unique", () => {
+  assertEquals(pickCallNumber(2, new Set([1])), 2);
+  assertEquals(pickCallNumber(2, new Set([1, 2])), 3);
+  assertEquals(pickCallNumber(0, new Set()), 1);
 });

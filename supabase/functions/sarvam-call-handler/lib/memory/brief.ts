@@ -76,6 +76,9 @@ export async function gatherBriefInputs(supabase: SupabaseClient, parentId: stri
   };
 }
 
+/** Sentences about what is empty rather than what to do; the agent would read them aloud. */
+export const META_SENTENCE = /\b(?:there (?:are|is) no|no) (?:required |open |follow-?up )+(?:follow-?up )?threads?[^.]*\.?|\bnone listed\b[^.]*\.?|\bnothing (?:is )?required\b[^.]*\.?/i;
+
 export type BriefInputs = Awaited<ReturnType<typeof gatherBriefInputs>>;
 
 /**
@@ -99,9 +102,11 @@ export async function writeBrief(openAiKey: string, inputs: BriefInputs, label: 
     if (!brief) continue;
     const words = countWords(brief);
     const missing = missingThreads(brief, inputs.threads_required.map((t) => ({ title: t.title, last_words: t.last_words || undefined })));
+    const filler = META_SENTENCE.exec(brief)?.[0];
     const problems = [
       words < SOFT_MIN || words > SOFT_MAX ? `it was ${words} words, it must be ${BRIEF_MIN_WORDS} to ${BRIEF_MAX_WORDS}` : "",
       missing.length ? `it left out these required threads: ${missing.map((m) => m.title).join("; ")}` : "",
+      filler ? `it says "${filler}"; write only facts and things to ask, never what is missing` : "",
     ].filter(Boolean);
     if (problems.length === 0) break;
     feedback = problems.join("; ");

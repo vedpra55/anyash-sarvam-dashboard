@@ -145,7 +145,12 @@ export async function runMemoryPipeline(
       }),
       { label: `${tag} profile` },
     );
-    const plan = planFactChanges(proposal?.actions, facts, new Set(events.map((e) => e.id)));
+    const plan = planFactChanges(
+      proposal?.actions,
+      facts,
+      new Set(events.map((e) => e.id)),
+      new Map(events.map((e) => [e.id, `${e.summary} ${e.parent_words}`])),
+    );
     result.rejected = plan.rejected;
     if (plan.rejected.length) console.warn(`${tag} rejected fact actions:`, plan.rejected);
 
