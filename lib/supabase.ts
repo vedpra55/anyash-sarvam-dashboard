@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl =
+export const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://vsljapxjdhqqaqvurajp.supabase.co";
 const supabaseAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
@@ -16,5 +16,9 @@ export function getServiceSupabase() {
     "";
   return createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false },
+    // Always read fresh rows: bypass Next.js's fetch cache.
+    global: {
+      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+    },
   });
 }

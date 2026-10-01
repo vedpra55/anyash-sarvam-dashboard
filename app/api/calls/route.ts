@@ -1,38 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
+import { getSarvamAttempts, attemptIdOf } from "@/lib/sarvam";
+import { testReason, attemptTime, last10 } from "@/lib/trial";
 
 export const dynamic = "force-dynamic";
 
-function isTestCall(item: any) {
-  const contact = item.user_contact || item.user_contact_masked || "";
-  const name = (item.agent_variables?.parent_name || "").toLowerCase();
-  // Filter dummy numbers (9876543210), web tests (@), or calls labeled "Test"
-  if (contact.includes("@")) return true;
-  if (contact.includes("9876543210")) return true;
-  if (name === "test") return true;
-  if (item.is_debug_call === 1) return true;
-  return false;
-}
-
 export async function GET(req: NextRequest) {
   try {
-    const apiKey = process.env.SARVAM_API_KEY || "";
-    const orgId = process.env.SARVAM_ORG_ID || "";
-    const workspaceId = process.env.SARVAM_WORKSPACE_ID || "";
-    const appId = process.env.SARVAM_APP_ID || "";
+    // Parent profiles (for phone matching) and Sarvam attempts load in parallel.
+    const supabase = getServiceSupabase();
+    const [parentsResult, attempts] = await Promise.all([
+      Promise.resolve(supabase.from("parent_profiles").select("id, parent_name, phone_number, child_name")).catch(
+        (dbErr) => {
+          console.warn("Could not query parent profiles for phone matching:", dbErr);
+          return { data: null };
+        }
+      ),
+      getSarvamAttempts(),
+    ]);
 
-    if (!apiKey || !orgId || !workspaceId || !appId) {
-      return NextResponse.json(
-        { error: "Sarvam environment variables not configured" },
-        { status: 500 }
-      );
+    if (!attempts.ok) {
+      return NextResponse.json({ error: attempts.error }, { status: attempts.status });
     }
 
-    // Load parent profiles from Supabase to match by phone number if needed
-    const supabase = getServiceSupabase();
     let phoneToParentMap = new Map<string, { id: string; name: string; child_name?: string }>();
-    try {
-      const { data: parents } = await supabase.from("parent_profiles").select("id, parent_name, phone_number, child_name");
+    {
+      const parents = parentsResult.data;
       if (parents) {
         for (const p of parents) {
           const raw = (p.phone_number || "").replace(/[^0-9+]/g, "");
@@ -44,58 +37,16 @@ export async function GET(req: NextRequest) {
           }
         }
       }
-    } catch (dbErr) {
-      console.warn("Could not query parent profiles for phone matching:", dbErr);
     }
 
-    // Strictly fetch only calls on or after 25 Sep 2026
-    const startIso = "2026-09-25T00:00:00.000Z";
-    const future = new Date();
-    future.setDate(future.getDate() + 1);
-    const endIso = future.toISOString();
-
-    const attemptsUrl = `https://apps.sarvam.ai/api/analytics/v1/${orgId}/${workspaceId}/${appId}/attempts?start_datetime=${encodeURIComponent(
-      startIso
-    )}&end_datetime=${encodeURIComponent(endIso)}&limit=100`;
-
-    const sarvamRes = await fetch(attemptsUrl, {
-      method: "GET",
-      headers: {
-        "X-API-Key": apiKey.trim(),
-        "API-Subscription-Key": apiKey.trim(),
-      },
-      cache: "no-store",
-    });
-
-    if (!sarvamRes.ok) {
-      const errText = await sarvamRes.text();
-      console.error(`Sarvam attempts API returned ${sarvamRes.status}:`, errText);
-      return NextResponse.json(
-        { error: `Sarvam API error (${sarvamRes.status}): ${errText}` },
-        { status: sarvamRes.status }
-      );
-    }
-
-    const data = await sarvamRes.json();
-    const rawItems: any[] = data.items || [];
-    const minTimestamp = new Date("2026-09-25T00:00:00Z").getTime();
-
-    // Filter to legitimate parent phone calls starting strictly from 25 Sep 2026
-    const phoneCalls = rawItems.filter((item: any) => {
-      if (item.channel_direction !== "outbound") return false;
-      if (isTestCall(item)) return false;
-      const callTime = new Date(item.attempted_at || item.start_datetime || "").getTime();
-      if (!isNaN(callTime) && callTime < minTimestamp) return false;
-      return true;
-    });
-
-    // Sort newest first by UTC timestamp
-    phoneCalls.sort((a, b) => {
-      const getUtc = (dStr: string) => new Date(dStr ? (dStr.endsWith("Z") ? dStr : dStr + "Z") : 0).getTime();
-      const timeA = getUtc(a.attempted_at || a.start_datetime);
-      const timeB = getUtc(b.attempted_at || b.start_datetime);
-      return timeB - timeA;
-    });
+    // Real trial calls only (the shared rule in lib/trial.ts). Calls to numbers that
+    // aren't a parent are only excluded when the parent list actually loaded.
+    const parentNumbers = parentsResult.data
+      ? new Set<string>(parentsResult.data.map((p: any) => last10(p.phone_number)).filter(Boolean))
+      : undefined;
+    const phoneCalls = attempts.items
+      .filter((item: any) => testReason(item, parentNumbers) === null)
+      .sort((a: any, b: any) => attemptTime(b) - attemptTime(a));
 
     // Normalize into clean CallItem structure
     const calls = phoneCalls.map((item: any) => {
@@ -116,13 +67,12 @@ export async function GET(req: NextRequest) {
 
       const childName = agentVars.child_name || matchedProfile?.child_name || "Family";
 
-      // Ensure timestamp has UTC 'Z' indicator so browser converts to local IST time correctly
-      const rawTimestamp = item.attempted_at || item.start_datetime || new Date().toISOString();
-      const createdAt = rawTimestamp.endsWith("Z") ? rawTimestamp : rawTimestamp + "Z";
+      const t = attemptTime(item);
+      const createdAt = new Date(isNaN(t) ? Date.now() : t).toISOString();
 
       return {
-        id: item.attempt_id,
-        attempt_id: item.attempt_id,
+        id: attemptIdOf(item),
+        attempt_id: attemptIdOf(item),
         interaction_id: item.interaction_id !== "NO_INTERACTION_ID" ? item.interaction_id : undefined,
         parent_name: parentName,
         parent_phone: userPhone,
@@ -134,19 +84,50 @@ export async function GET(req: NextRequest) {
         health_update: agentVars.health_update || undefined,
         follow_up_detail: agentVars.follow_up_detail || undefined,
         follow_up_needed: agentVars.follow_up_needed || undefined,
-        parent_mood: agentVars.conversation_signal || undefined,
+        parent_mood: agentVars.parent_mood || undefined,
+        mood_note: agentVars.mood_note || undefined,
+        conversation_signal: agentVars.conversation_signal || undefined,
+        ongoing_health_context: agentVars.ongoing_health_context || undefined,
+        personal_context: agentVars.personal_context || undefined,
+        agent_variables: agentVars,
         created_at: createdAt,
         language_name: item.language_name !== "UNKNOWN" ? item.language_name : undefined,
         num_messages: item.num_messages || 0,
         has_recording: item.interaction_id && item.interaction_id !== "NO_INTERACTION_ID" && (item.duration_in_seconds || 0) > 0,
         audio_url: item.audio_url || undefined,
+        end_reason: item.end_reason && item.end_reason !== "NO_END_REASON" ? item.end_reason : undefined,
+        goal_status: item.evaluation?.overall_status || undefined,
+      };
+    });
+
+    // Attach the AI review verdict stored in Supabase for each call
+    const reviewByAttempt = new Map<string, any>();
+    const attemptIds = calls.map((c) => c.attempt_id).filter(Boolean);
+    if (attemptIds.length > 0) {
+      try {
+        const { data: reviews } = await supabase
+          .from("call_records")
+          .select("attempt_id, ai_decision, ai_urgency")
+          .in("attempt_id", attemptIds);
+        for (const r of reviews || []) reviewByAttempt.set(r.attempt_id, r);
+      } catch (reviewErr) {
+        console.warn("Could not load call reviews:", reviewErr);
+      }
+    }
+
+    const callsWithReviews = calls.map((c) => {
+      const review = reviewByAttempt.get(c.attempt_id);
+      return {
+        ...c,
+        ai_decision: review?.ai_decision || undefined,
+        ai_urgency: review?.ai_urgency || undefined,
       };
     });
 
     return NextResponse.json({
       success: true,
-      calls,
-      total: calls.length,
+      calls: callsWithReviews,
+      total: callsWithReviews.length,
     });
   } catch (err: any) {
     console.error("Failed to fetch Sarvam calls:", err);

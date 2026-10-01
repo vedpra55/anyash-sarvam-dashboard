@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { X, Minus, Plus, Pencil, Phone, Globe, ChevronDown } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Minus, Plus, ChevronRight, Phone } from "lucide-react";
 import { ParentItem } from "./ParentsListColumn";
 import { SupportedLanguage } from "@/lib/types";
+import { LANGUAGES, formatPhone } from "@/lib/languages";
+import { Modal, Button, FieldLabel, TextInput, SelectInput, TextArea } from "./primitives";
 
 interface CallModalProps {
   isOpen: boolean;
@@ -13,113 +15,49 @@ interface CallModalProps {
   isCalling: boolean;
 }
 
-export const ALL_SUPPORTED_LANGUAGES: { id: SupportedLanguage; label: string; nativeName: string }[] = [
-  { id: "Hindi", label: "Hindi", nativeName: "हिंदी" },
-  { id: "English", label: "English", nativeName: "English" },
-  { id: "Hinglish", label: "Hinglish", nativeName: "हिंग्लिश" },
-  { id: "Tamil", label: "Tamil", nativeName: "தமிழ்" },
-  { id: "Telugu", label: "Telugu", nativeName: "తెలుగు" },
-  { id: "Kannada", label: "Kannada", nativeName: "ಕನ್ನಡ" },
-  { id: "Marathi", label: "Marathi", nativeName: "मराठी" },
-  { id: "Bengali", label: "Bengali", nativeName: "বাংলা" },
-  { id: "Gujarati", label: "Gujarati", nativeName: "ગુજરાતી" },
-  { id: "Punjabi", label: "Punjabi", nativeName: "ਪੰਜਾਬੀ" },
-  { id: "Malayalam", label: "Malayalam", nativeName: "മലയാളം" },
-  { id: "Odia", label: "Odia", nativeName: "ଓଡ଼ିଆ" },
-  { id: "Assamese", label: "Assamese", nativeName: "অসমীয়া" },
-];
-
-function formatPhoneDisplay(raw?: string): string {
-  if (!raw) return "";
-  const cleaned = raw.trim();
-  // Format +91XXXXXXXXXX to +91 XXXXXXXXXX
-  if (cleaned.startsWith("+91") && cleaned.length === 13) {
-    return `+91 ${cleaned.slice(3)}`;
-  }
-  return cleaned;
-}
-
-export function CallModal({
-  isOpen,
-  parent,
-  onClose,
-  onDispatchCall,
-  isCalling,
-}: CallModalProps) {
-  const [callNumber, setCallNumber] = useState<number>(1);
-  const [phoneNumber, setPhoneNumber] = useState("");
+export function CallModal({ isOpen, parent, onClose, onDispatchCall, isCalling }: CallModalProps) {
+  const [callNumber, setCallNumber] = useState(1);
+  const [phone, setPhone] = useState("");
+  const [editingPhone, setEditingPhone] = useState(false);
   const [language, setLanguage] = useState<SupportedLanguage>("Hindi");
   const [context, setContext] = useState("");
+  const [showContext, setShowContext] = useState(false);
 
   useEffect(() => {
-    if (parent) {
-      // 1. Initial Call Number from Supabase / Parent profile
-      // Math: Profile creation = 1. After 1st call = 2.
-      const count =
-        typeof parent.number_of_calls === "number" && parent.number_of_calls > 0
-          ? parent.number_of_calls
-          : parent.calls && parent.calls.length > 0
-          ? parent.calls.length + 1
-          : 1;
-      setCallNumber(count);
+    if (!isOpen || !parent) return;
+    const count =
+      typeof parent.number_of_calls === "number" && parent.number_of_calls > 0
+        ? parent.number_of_calls
+        : parent.calls && parent.calls.length > 0
+        ? parent.calls.length + 1
+        : 1;
+    setCallNumber(count);
+    setPhone(parent.phone_number || "");
+    setEditingPhone(false);
+    setLanguage(((parent.language || parent.facts?.language) as SupportedLanguage) || "Hindi");
+    setContext(parent.current_user_context || "");
+    setShowContext(false);
+  }, [isOpen, parent]);
 
-      // 2. Initial Phone Number from Supabase
-      setPhoneNumber(formatPhoneDisplay(parent.phone_number || "+91 8409527846"));
+  if (!parent) return null;
 
-      // 3. Initial Language from parent profile / facts
-      const initialLang =
-        (parent.facts?.language as SupportedLanguage) ||
-        ((parent as any).preferredLanguage as SupportedLanguage) ||
-        ((parent as any).language as SupportedLanguage) ||
-        "Hindi";
-      setLanguage(initialLang);
-
-      // 4. Exact user_context from Supabase as plain text
-      const supabaseUserContext =
-        parent.current_user_context || (parent as any).user_context || "";
-      setContext(supabaseUserContext);
-    }
-  }, [parent]);
-
-  const handleUpdateCallNumber = (newCount: number) => {
-    const valid = Math.max(1, newCount);
+  const updateCallNumber = (n: number) => {
+    const valid = Math.max(1, n);
     setCallNumber(valid);
-    // Dynamically synchronize CALL COUNT: X in the context text so user preview matches the stepper
-    setContext((prev) => {
-      if (prev && /CALL COUNT:\s*\d+/i.test(prev)) {
-        return prev.replace(/CALL COUNT:\s*\d+/i, `CALL COUNT: ${valid}`);
-      }
-      return prev;
-    });
+    // Keep "CALL COUNT: N" in the context in step with the number.
+    setContext((prev) =>
+      prev && /CALL COUNT:\s*\d+/i.test(prev) ? prev.replace(/CALL COUNT:\s*\d+/i, `CALL COUNT: ${valid}`) : prev
+    );
   };
 
-  if (!isOpen || !parent) return null;
-
-  // Pills: ensure currently selected or parent's language is always included in the quick pills row
-  const quickPills: SupportedLanguage[] = Array.from(
-    new Set<SupportedLanguage>([
-      language,
-      "Hindi",
-      "English",
-      "Hinglish",
-      "Tamil",
-      "Telugu",
-      "Kannada",
-      "Marathi",
-    ])
-  ).slice(0, 6);
-
-  const handleStartCall = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanPhone = phoneNumber.replace(/\s+/g, "");
-
+  const start = async () => {
     await onDispatchCall({
       profile: {
         id: parent.id,
         parentName: parent.parent_name,
-        parentPhone: cleanPhone,
-        childName: parent.child_name || parent.facts?.family_member || "Priya",
-        honorific: parent.honorific || "Mummy Ji",
+        parentPhone: phone.replace(/\s+/g, ""),
+        childName: parent.child_name || parent.facts?.family_member || "Family",
+        honorific: parent.honorific || "Ji",
         preferredLanguage: language,
         number_of_calls: callNumber,
       },
@@ -130,163 +68,115 @@ export function CallModal({
     });
   };
 
+  const firstName = parent.parent_name.split(" ")[0];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 select-none">
-      <div className="w-full max-w-[480px] bg-[#121316] border border-[#22242B] rounded-2xl p-6 shadow-2xl flex flex-col space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <span className="text-xs text-[#8E929A] font-medium block">Calling</span>
-            <h2 className="text-2xl font-bold text-white tracking-tight mt-0.5">
-              {parent.parent_name || "Sunita Sharma"}
-            </h2>
-          </div>
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      dismissable={!isCalling}
+      title={`Call ${firstName}`}
+      description={
+        editingPhone ? (
+          "Anya will call this number."
+        ) : (
+          <span>
+            {formatPhone(phone)}
+            <button onClick={() => setEditingPhone(true)} className="ml-2 text-zinc-300 hover:text-white" disabled={isCalling}>
+              Change
+            </button>
+          </span>
+        )
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={isCalling}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={start} disabled={isCalling || !phone.trim()} icon={<Phone className="w-3.5 h-3.5 fill-black" />}>
+            {isCalling ? "Calling…" : "Call now"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        {editingPhone && (
+          <FieldLabel label="Phone number" htmlFor="call-phone">
+            <TextInput id="call-phone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoFocus />
+          </FieldLabel>
+        )}
+
+        <div className="grid grid-cols-[1fr_auto] gap-4 items-end">
+          <FieldLabel label="Language" htmlFor="call-lang">
+            <SelectInput
+              id="call-lang"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as SupportedLanguage)}
+              disabled={isCalling}
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label} · {l.nativeName}
+                </option>
+              ))}
+            </SelectInput>
+          </FieldLabel>
+          <FieldLabel label="Call number">
+            <div className="h-10 inline-flex items-center rounded-lg ring-1 ring-white/[0.08] bg-white/[0.04]">
+              <button
+                type="button"
+                aria-label="Previous call number"
+                onClick={() => updateCallNumber(callNumber - 1)}
+                disabled={callNumber <= 1 || isCalling}
+                className="w-9 h-full flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <span className="w-8 text-center text-[14px] text-white tabular-nums">{callNumber}</span>
+              <button
+                type="button"
+                aria-label="Next call number"
+                onClick={() => updateCallNumber(callNumber + 1)}
+                disabled={isCalling}
+                className="w-9 h-full flex items-center justify-center text-zinc-400 hover:text-white"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </FieldLabel>
+        </div>
+        <p className="text-[12px] text-zinc-600 -mt-3">
+          {callNumber <= 1 ? "First call: Anya will introduce herself." : "Follow-up call: Anya will pick up from her memory."}
+        </p>
+
+        <div>
           <button
             type="button"
-            onClick={onClose}
-            disabled={isCalling}
-            className="text-[#8E929A] hover:text-white p-1 rounded-lg transition-colors"
+            onClick={() => setShowContext(!showContext)}
+            className="inline-flex items-center gap-1.5 text-[13px] text-zinc-400 hover:text-white"
           >
-            <X className="w-5 h-5" />
+            <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showContext ? "rotate-90" : ""}`} />
+            What Anya knows going in
           </button>
-        </div>
-
-        {/* Form Body */}
-        <form onSubmit={handleStartCall} className="space-y-4">
-          {/* Section 1: Call # */}
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-white block">Call #</label>
-            <p className="text-xs text-[#8E929A]">Which call is this for this parent?</p>
-            <div className="inline-flex items-center bg-[#17191E] border border-[#262A32] rounded-xl overflow-hidden mt-1.5">
-              <button
-                type="button"
-                onClick={() => handleUpdateCallNumber(callNumber - 1)}
-                disabled={callNumber <= 1 || isCalling}
-                className="w-12 h-10 flex items-center justify-center text-[#8E929A] hover:text-white hover:bg-[#20232A] transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
-              >
-                <Minus className="w-4 h-4" />
-              </button>
-              <div className="w-14 h-10 flex items-center justify-center font-bold text-white text-sm select-none">
-                {callNumber}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleUpdateCallNumber(callNumber + 1)}
+          {showContext && (
+            <div className="mt-3">
+              <TextArea
+                rows={9}
+                maxLength={3000}
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
                 disabled={isCalling}
-                className="w-12 h-10 flex items-center justify-center text-[#8E929A] hover:text-white hover:bg-[#20232A] transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Section 2: Phone number */}
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-white block">Phone number</label>
-            <p className="text-xs text-[#8E929A]">Update if needed.</p>
-            <div className="relative flex items-center bg-[#17191E] border border-[#262A32] rounded-xl mt-1.5 focus-within:border-[#FEE5A5] transition-colors">
-              <input
-                type="text"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                disabled={isCalling}
-                className="w-full bg-transparent px-4 py-2.5 text-sm text-white font-normal outline-none"
+                spellCheck={false}
+                placeholder="Anything Anya should know or ask about on this call."
+                className="font-mono text-[12px]"
               />
-              <Pencil className="w-4 h-4 text-[#717680] mr-4 shrink-0 pointer-events-none" />
+              <p className="text-[12px] text-zinc-600 mt-1.5">
+                Edits here are saved to her memory for this parent when the call starts.
+              </p>
             </div>
-          </div>
-
-          {/* Section 3: Language */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-semibold text-white flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-[#FEE5A5]" />
-                <span>Language</span>
-              </label>
-              <span className="text-[11px] text-[#8E929A] font-medium">Sarvam Multilingual</span>
-            </div>
-            <p className="text-xs text-[#8E929A]">Choose the language Anya will speak for this call.</p>
-
-            {/* Custom Dropdown Selector */}
-            <div className="relative mt-1.5">
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value as SupportedLanguage)}
-                disabled={isCalling}
-                className="w-full appearance-none bg-[#17191E] border border-[#262A32] rounded-xl px-4 py-2.5 text-sm text-white font-medium outline-none focus:border-[#FEE5A5] transition-colors cursor-pointer pr-10"
-              >
-                {ALL_SUPPORTED_LANGUAGES.map((lang) => (
-                  <option key={lang.id} value={lang.id} className="bg-[#17191E] text-white">
-                    {lang.label} ({lang.nativeName})
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-[#717680] absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-
-            {/* Quick-Pick Pills */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {quickPills.map((lang) => {
-                const info = ALL_SUPPORTED_LANGUAGES.find((l) => l.id === lang);
-                const isSelected = language === lang;
-                return (
-                  <button
-                    key={lang}
-                    type="button"
-                    onClick={() => setLanguage(lang)}
-                    disabled={isCalling}
-                    className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all ${
-                      isSelected
-                        ? "bg-[#FEE5A5] text-black font-semibold shadow-sm"
-                        : "bg-[#17191E] text-[#8E929A] hover:text-white border border-[#262A32] hover:border-[#383D48]"
-                    }`}
-                  >
-                    {info ? info.label : lang}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Section 4: Context for this call */}
-          <div className="space-y-1">
-            <label className="text-sm font-semibold text-white block">Context for this call</label>
-            <p className="text-xs text-[#8E929A]">Any important details, reminders or focus areas.</p>
-            <textarea
-              rows={4}
-              maxLength={1500}
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              disabled={isCalling}
-              placeholder="Any important details, reminders or focus areas..."
-              className="w-full bg-[#17191E] border border-[#262A32] rounded-xl p-3.5 text-xs text-white placeholder-[#5A606C] outline-none focus:border-[#FEE5A5] resize-none h-28 leading-relaxed mt-1.5 transition-colors font-mono"
-            />
-            <div className="text-right text-[11px] text-[#636873] mt-1 font-mono">
-              {context.length}/1500
-            </div>
-          </div>
-
-          {/* Section 5: Footer */}
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isCalling}
-              className="px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#1A1D23] hover:bg-[#22262E] border border-[#2A2E38] transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isCalling}
-              className="px-5 py-2.5 rounded-xl text-xs font-bold text-black bg-[#FEE5A5] hover:bg-[#fde08f] flex items-center gap-2 transition-all active:scale-95 shadow-sm disabled:opacity-50"
-            >
-              <Phone className="w-3.5 h-3.5 fill-black" />
-              <span>{isCalling ? "Calling..." : "Call now"}</span>
-            </button>
-          </div>
-        </form>
+          )}
+        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

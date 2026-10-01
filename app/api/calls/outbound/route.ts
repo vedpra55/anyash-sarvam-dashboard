@@ -1,13 +1,31 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import {
   ParentProfile,
   VoiceHealthConfig,
   SupportedLanguage,
 } from "@/lib/types";
 import { buildSarvamVariables, resolveCallCount } from "@/lib/prompts";
-import { getServiceSupabase } from "@/lib/supabase";
+import { getServiceSupabase, supabaseUrl } from "@/lib/supabase";
+import { getSavedAgentVersion } from "@/lib/settings";
+import { checkCallTime } from "@/lib/callTime";
+import { chooseUserContext, readBriefMode, recordBriefUse, requestBrief } from "@/lib/briefs";
 
 export const dynamic = "force-dynamic";
+// A live brief is written before the call is placed (up to ~25 s).
+export const maxDuration = 60;
+
+const PROFILE_COLUMNS =
+  "id, parent_name, current_user_context, number_of_calls, phone_number, facts, preferred_call_time, sleep_time";
+
+/**
+ * Reads the variable names out of Sarvam's 422 error, e.g.
+ * "Agent variables '{'language', 'preferred_language'}' not found in agent variables of app ..."
+ */
+function parseUnknownAgentVariables(errorText: string): string[] {
+  const match = errorText.match(/Agent variables? '?\{([^}]*)\}'? not found/i);
+  if (!match) return [];
+  return Array.from(match[1].matchAll(/'([A-Za-z0-9_]+)'/g), (m) => m[1]);
+}
 
 interface OutboundRequestBody {
   profile: ParentProfile;
@@ -54,6 +72,7 @@ export async function POST(req: NextRequest) {
       profile,
     );
     const normalizedPhone = profile.parentPhone ? profile.parentPhone.replace(/[^\d+]/g, "") : "";
+    let refusedReason: string | null = null;
 
     try {
       const supabase = getServiceSupabase();
@@ -64,7 +83,7 @@ export async function POST(req: NextRequest) {
       if (normalizedPhone) {
         const { data: profByPhone } = await supabase
           .from("parent_profiles")
-          .select("id, current_user_context, number_of_calls, phone_number")
+          .select(PROFILE_COLUMNS)
           .or(`phone_number.eq.${normalizedPhone},phone_number.ilike.%${last10}%`)
           .maybeSingle();
         if (profByPhone) {
@@ -76,7 +95,7 @@ export async function POST(req: NextRequest) {
       if (!dbProfile && profile.id) {
         const { data: profById } = await supabase
           .from("parent_profiles")
-          .select("id, current_user_context, number_of_calls, phone_number")
+          .select(PROFILE_COLUMNS)
           .eq("id", profile.id)
           .maybeSingle();
 
@@ -88,24 +107,14 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // If still not found, create a new separate profile for this phone number
-      if (!dbProfile && normalizedPhone) {
-        const { data: newProfile } = await supabase
-          .from("parent_profiles")
-          .insert({
-            phone_number: normalizedPhone,
-            parent_name: profile.parentName || "Parent",
-            child_name: profile.childName || "Family",
-            honorific: profile.honorific || "Mummy Ji",
-            number_of_calls: callCount,
-            current_user_context: `TODAY: Initial Check-in | CALL COUNT: ${callCount}\nBASELINE: ${profile.parentName || "Parent"} | Child: ${profile.childName || "Family"}\nACTIVE WATCHLIST:\n- First call check-in.`,
-          })
-          .select("id, current_user_context, number_of_calls, phone_number")
-          .single();
-        dbProfile = newProfile;
-      }
-
-      if (dbProfile) {
+      // Every family is onboarded (a profile from the child) before its first call,
+      // and is never called after its latest call time (India time).
+      const timeCheck = dbProfile ? checkCallTime(dbProfile) : null;
+      if (!dbProfile) {
+        refusedReason = "This number has no parent profile yet. Add the parent (or send the onboarding link) before calling.";
+      } else if (timeCheck && !timeCheck.allowed) {
+        refusedReason = timeCheck.reason;
+      } else {
         userId = dbProfile.id;
         fetchedUserContext = dbProfile.current_user_context || "";
 
@@ -142,6 +151,7 @@ export async function POST(req: NextRequest) {
             current_user_context: effectiveContext,
             number_of_calls: callCount,
             facts: updatedFacts,
+            language: updatedFacts.language,
             updated_at: new Date().toISOString(),
           })
           .eq("id", dbProfile.id);
@@ -152,18 +162,25 @@ export async function POST(req: NextRequest) {
       console.error("Failed to query/create parent_profiles in Supabase:", dbErr);
     }
 
+    if (refusedReason) {
+      console.warn(`Outbound call refused: ${refusedReason}`);
+      return NextResponse.json({ error: refusedReason }, { status: 409 });
+    }
+
     const callCountStr = String(callCount);
-    const isFirstCall = callCount <= 1;
 
     const apiKey = config?.sarvamApiKey || process.env.SARVAM_API_KEY || "";
     const orgId = config?.sarvamOrgId || process.env.SARVAM_ORG_ID || "";
     const workspaceId =
       config?.sarvamWorkspaceId || process.env.SARVAM_WORKSPACE_ID || "";
     const appId = config?.sarvamAppId || process.env.SARVAM_APP_ID || "";
+    // Precedence: version saved in dashboard settings > request config > env > 12
+    const savedAppVersion = await getSavedAgentVersion();
     const appVersion =
-      (config?.sarvamAppVersion && config.sarvamAppVersion > 1)
+      savedAppVersion ??
+      ((config?.sarvamAppVersion && config.sarvamAppVersion > 1)
         ? config.sarvamAppVersion
-        : (Number(process.env.SARVAM_APP_VERSION) || 12);
+        : (Number(process.env.SARVAM_APP_VERSION) || 12));
     const connectionId =
       config?.connectionId || process.env.SARVAM_CONNECTION_ID || "";
     const agentPhone =
@@ -201,25 +218,28 @@ export async function POST(req: NextRequest) {
           ? "Hindi"
           : language;
 
-      const effectiveUserContext = (user_context_override !== undefined && user_context_override.trim())
-        ? user_context_override.trim()
-        : fetchedUserContext;
+      // Phase 3 pre-call brief. Shadow: built after the call is placed, old
+      // context sent. Live: built first and sent, old context if it fails.
+      const briefDb = getServiceSupabase();
+      const briefMode = userId ? await readBriefMode(briefDb) : "off";
+      const override = typeof user_context_override === "string" ? user_context_override : undefined;
+      const liveBrief =
+        briefMode === "live" && !override?.trim()
+          ? await requestBrief(briefDb, supabaseUrl, userId, callCount, "live")
+          : null;
+      const { context: effectiveUserContext, usedBrief } = chooseUserContext({
+        mode: briefMode,
+        brief: liveBrief,
+        oldContext: fetchedUserContext,
+        override,
+      });
 
-      const isEnglish = validLanguage === "English";
-      const defaultGreeting = isFirstCall
-        ? (isEnglish
-            ? `Hello ${profile.parentName}! I am Anya calling on behalf of ${profile.childName} to check in on you. How are you feeling today?`
-            : `Namaste ${profile.honorific || profile.parentName}! Main Anya bol rahi hoon, ${profile.childName} ne aapka haal-chaal lene ke liye pehli baar phone karne ko kaha tha. Aap aaj kaisa mehsoos kar rahe hain?`)
-        : (isEnglish
-            ? `Hello ${profile.parentName}! I am Anya calling on behalf of ${profile.childName}. How are you feeling today?`
-            : `Namaste ${profile.honorific || profile.parentName}! Main Anya bol rahi hoon, ${profile.childName} ki taraf se. Aap aaj kaisa mehsoos kar rahe hain?`);
-
-      // If initial_bot_message_override was passed, respect it.
-      // If language is English or Hindi, use our tailored greeting.
-      // For other Indic languages, omit initial_bot_message to allow Sarvam's native audio intro to speak in that language.
-      const effectiveBotMessage = (initial_bot_message_override !== undefined && initial_bot_message_override.trim())
-        ? initial_bot_message_override.trim()
-        : (isEnglish || validLanguage === "Hindi" ? defaultGreeting : undefined);
+      // The agent's own prompt and intro open the call. A greeting is sent only
+      // when a manual test passes initial_bot_message_override.
+      const botMessageOverride =
+        typeof initial_bot_message_override === "string" && initial_bot_message_override.trim()
+          ? initial_bot_message_override.trim()
+          : undefined;
 
       const sarvamPayload: any = {
         app_config: {
@@ -234,14 +254,12 @@ export async function POST(req: NextRequest) {
             user_id: userId,
             user_context: effectiveUserContext,
             number_of_calls: callCountStr,
-            preferred_language: validLanguage,
-            language: validLanguage,
           },
           app_overrides: {
             initial_language_name: validLanguage,
             user_id: userId,
             user_context: effectiveUserContext,
-            ...(effectiveBotMessage ? { initial_bot_message: effectiveBotMessage } : {}),
+            ...(botMessageOverride ? { initial_bot_message: botMessageOverride } : {}),
           },
         },
         user_config: {
@@ -259,14 +277,34 @@ export async function POST(req: NextRequest) {
         },
       };
 
-      const sarvamRes = await fetch(sarvamUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": apiKey.trim(),
-        },
-        body: JSON.stringify(sarvamPayload),
-      });
+      const sendOutbound = () =>
+        fetch(sarvamUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey.trim(),
+          },
+          body: JSON.stringify(sarvamPayload),
+        });
+
+      let sarvamRes = await sendOutbound();
+
+      // Agent versions define different variables, and Sarvam rejects unknown ones.
+      // Drop the variables it names and retry once.
+      let droppedVariables: string[] = [];
+      if (sarvamRes.status === 422) {
+        const errorText = await sarvamRes.clone().text();
+        droppedVariables = parseUnknownAgentVariables(errorText);
+        if (droppedVariables.length > 0) {
+          for (const name of droppedVariables) {
+            delete sarvamPayload.app_config.agent_variables[name];
+          }
+          console.warn(
+            `Agent version ${appVersion} does not define ${droppedVariables.join(", ")}; retrying without them.`,
+          );
+          sarvamRes = await sendOutbound();
+        }
+      }
 
       if (!sarvamRes.ok) {
         const errorText = await sarvamRes.text();
@@ -285,10 +323,21 @@ export async function POST(req: NextRequest) {
       }
 
       const data = await sarvamRes.json();
+      const placedAttemptId: string | null = data.attempt_id || null;
+      if (liveBrief) {
+        after(() => recordBriefUse(briefDb, liveBrief.briefId, placedAttemptId, effectiveUserContext, usedBrief));
+      } else if (briefMode === "shadow") {
+        after(async () => {
+          const shadow = await requestBrief(briefDb, supabaseUrl, userId, callCount, "shadow");
+          if (shadow) await recordBriefUse(briefDb, shadow.briefId, placedAttemptId, effectiveUserContext, false);
+        });
+      }
       return NextResponse.json({
         success: true,
         attemptId: data.attempt_id || `sarvam-att-${Date.now()}`,
         mode: "live_telephony",
+        brief_mode: briefMode,
+        used_brief: usedBrief,
         recipient: profile.parentPhone,
         language,
         number_of_calls: callCountStr,
