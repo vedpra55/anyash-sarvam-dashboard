@@ -7,3 +7,7 @@ verify_jwt = false
 # Checked by the function itself with x-memory-secret.
 [functions.build-brief]
 verify_jwt = false
+
+# Checked by the function itself with x-memory-secret.
+[functions.eval-agent]
+verify_jwt = false

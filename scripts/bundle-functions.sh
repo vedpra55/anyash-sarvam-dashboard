@@ -4,7 +4,7 @@
 # stays in supabase/functions; the bundle is not committed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-for fn in sarvam-call-handler build-brief; do
+for fn in sarvam-call-handler build-brief eval-agent; do
   out="supabase/.bundle/$fn"
   mkdir -p "$out"
   npx --yes esbuild "supabase/functions/$fn/index.ts" \
