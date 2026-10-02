@@ -4,7 +4,6 @@ import React from "react";
 import { X, Plus } from "lucide-react";
 import { LANGUAGES, RELATIONSHIPS } from "@/lib/languages";
 import { HONORIFICS, LIVING_SITUATIONS, QUESTIONS, OnboardingInput } from "@/lib/onboarding";
-import { latestCallTime, formatClock } from "@/lib/callTime";
 import { FieldLabel, TextInput, SelectInput, TextArea } from "./primitives";
 
 export const EMPTY_ONBOARDING: OnboardingInput = {
@@ -99,7 +98,6 @@ export function OnboardingForm({
 }) {
   const set = <K extends keyof OnboardingInput>(key: K, v: OnboardingInput[K]) => onChange({ ...value, [key]: v });
   const id = (name: string) => `${idPrefix}-${name}`;
-  const latest = latestCallTime(value.sleep_time, value.preferred_call_time);
 
   return (
     <div className="space-y-8">
@@ -186,7 +184,7 @@ export function OnboardingForm({
         <FieldLabel
           label={QUESTIONS.preferred_call_time}
           htmlFor={id("calltime")}
-          hint={latest ? `Anyash won't call after ${formatClock(latest.minutes)}.` : "Sone ka time dein, taaki Anyash kabhi late na call kare."}
+          hint="Anyash usually calls around this time."
         >
           <TextInput id={id("calltime")} type="time" value={value.preferred_call_time} onChange={(e) => set("preferred_call_time", e.target.value)} />
         </FieldLabel>

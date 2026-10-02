@@ -230,7 +230,7 @@ TanStack Query 5.
 | `/api/onboarding/links` | POST | New single-use onboarding link |
 | `/api/onboarding/[token]` | GET / POST | Check a link / save the child's form and use up the link |
 | `/api/parents/[id]` | DELETE | Deletes daily logs, call records, decision cards, then the parent |
-| `/api/calls/outbound` | POST | Finds the Supabase profile (refuses numbers with no profile, and calls after the latest call time), syncs call count & context, calls Sarvam Outbound API. Gets a pre-call brief from `build-brief`: in `shadow` mode after the call is placed (old context sent), in `live` mode before it (brief sent; old context if the brief fails). Falls back to a **simulated** attempt if telephony env vars are missing |
+| `/api/calls/outbound` | POST | Finds the Supabase profile (refuses numbers with no profile; no time-of-day limit), syncs call count & context, calls Sarvam Outbound API. Gets a pre-call brief from `build-brief`: in `shadow` mode after the call is placed (old context sent), in `live` mode before it (brief sent; old context if the brief fails). Falls back to a **simulated** attempt if telephony env vars are missing |
 | `/api/insights` | GET | Trial call ledger for Insights: Sarvam attempts + evaluations joined with Supabase reviews, logs and follow-ups; test calls counted by reason |
 | `/api/calls` | GET | Sarvam Analytics attempts (outbound, non-test, since 25 Sep 2026), normalised, name-matched to parents, with the AI verdict from `call_records` |
 | `/api/calls/transcript` | GET | Transcript by `interaction_id` from Sarvam; falls back to `call_records.transcript` |
@@ -425,10 +425,10 @@ sentence about what is missing ("no threads listed"), then any still missing
 are appended. With no required threads that part is simply left out.
 Deploy both functions with `scripts/bundle-functions.sh` (single-file bundles).
 
-**Bedtime guard**: `parent_profiles.preferred_call_time` / `sleep_time`
-("HH:MM", India time, editable on the parent's Profile tab). The outbound
-route refuses calls after sleep_time − 60 min (or preferred_call_time + 90
-min when sleep_time is empty) and returns the reason.
+**Call times**: `parent_profiles.preferred_call_time` / `sleep_time`
+("HH:MM", India time, editable on the parent's Profile tab) are shown on the
+parent page and used in the onboarding context. They do not limit calls: a
+parent can be called at any time.
 
 ---
 
