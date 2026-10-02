@@ -3,7 +3,7 @@ import { fakeDb, stubModel } from "../../sarvam-call-handler/tests/fake_db.ts";
 import { estimateSeconds, renderTemplate, talkStats, type Turn } from "../lib/transcript.ts";
 import { overall, runDeterministic } from "../lib/graders.ts";
 import { stepResult } from "../lib/runner.ts";
-import { END_MARK } from "../lib/agent.ts";
+import { agentTurn, END_INTERACTION_TOOL } from "../lib/agent.ts";
 
 const t = (role: "agent" | "parent", text: string): Turn => ({ role, text });
 const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
@@ -134,7 +134,6 @@ Deno.test("a scenario is stepped in small pieces, then graded and saved", async 
     assertEquals(r.grades.checks.find((c: any) => c.id === "feelings").pass, null);
     assertEquals(r.grades.criteria[0].pass, true);
     assertEquals(w.tables.eval_runs[0].status, "done");
-    assert(END_MARK.length > 0);
   } finally {
     m.restore();
   }
@@ -156,5 +155,40 @@ Deno.test("a model failure is saved on the result, not lost", async () => {
     assert(String(w.tables.eval_results[0].error).includes("429"));
   } finally {
     globalThis.fetch = real;
+  }
+});
+
+function stubAgent(message: Record<string, unknown>) {
+  const real = globalThis.fetch;
+  const bodies: any[] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ choices: [{ message }], usage: { total_tokens: 7 } }), { status: 200 });
+  }) as typeof fetch;
+  return { bodies, restore: () => (globalThis.fetch = real) };
+}
+
+Deno.test("the agent has Sarvam's end_interaction tool, and plain text never ends the call", async () => {
+  const s = stubAgent({ content: "Main Anyaash hoon. Priya ne mujhe aapke liye set kiya hai." });
+  try {
+    const a = await agentTurn("key", "system", [t("agent", "Namaste"), t("parent", "Aap kaun?")]);
+    assertEquals(a.ends, false);
+    assertEquals(s.bodies[0].tools, [END_INTERACTION_TOOL]);
+    assert(!String(s.bodies[0].messages[0].content).includes("END_CALL"));
+  } finally {
+    s.restore();
+  }
+});
+
+Deno.test("calling end_interaction ends the call and its end_message is the last line spoken", async () => {
+  const s = stubAgent({
+    content: null,
+    tool_calls: [{ type: "function", function: { name: "end_interaction", arguments: JSON.stringify({ end_message: "Kal phir baat karenge, Mummy Ji." }) } }],
+  });
+  try {
+    const a = await agentTurn("key", "system", [t("agent", "Namaste"), t("parent", "Theek hai beta, chalo.")]);
+    assertEquals([a.ends, a.text], [true, "Kal phir baat karenge, Mummy Ji."]);
+  } finally {
+    s.restore();
   }
 });
