@@ -21,6 +21,18 @@ export async function GET() {
   });
 }
 
+/** Deletes the runs given as { ids } (their results go with them), or every run with { all: true }. */
+export async function DELETE(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  const supabase = getServiceSupabase();
+  const ids: string[] = Array.isArray(body.ids) ? body.ids.map(String) : [];
+  if (!body.all && ids.length === 0) return NextResponse.json({ error: "Say which runs to delete." }, { status: 400 });
+  const query = supabase.from("eval_runs").delete();
+  const { error } = body.all ? await query.not("id", "is", null) : await query.in("id", ids);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ success: true });
+}
+
 /** Creates a run with one queued result per scenario. The page then steps each result. */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));

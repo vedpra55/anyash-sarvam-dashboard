@@ -30,7 +30,11 @@ async function complete(apiKey: string, messages: Msg[], effort: string, label: 
   return { content, toolCalls, tokens: Number(data.usage?.total_tokens) || 0 };
 }
 
-/** One agent turn: the system prompt, the conversation so far, and the tools the agent has on Sarvam. */
+/**
+ * One agent turn: the system prompt, the conversation so far, and the tools the agent has on Sarvam.
+ * Reasoning is off: chat completions refuses function tools with reasoning on for this model, and
+ * the agent on Sarvam answers straight away too.
+ */
 export async function chatAgent(
   apiKey: string,
   system: string,
@@ -38,7 +42,7 @@ export async function chatAgent(
   tools: unknown[],
   label: string,
 ) {
-  return complete(apiKey, [{ role: "developer", content: system }, ...history], "low", label, tools.length ? { tools } : {});
+  return complete(apiKey, [{ role: "developer", content: system }, ...history], "none", label, tools.length ? { tools } : {});
 }
 
 export async function chatJson<T>(apiKey: string, system: string, user: string, label: string, effort = "low"): Promise<{ result: T; tokens: number }> {

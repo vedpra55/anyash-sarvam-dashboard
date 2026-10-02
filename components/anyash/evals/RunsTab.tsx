@@ -8,6 +8,14 @@ import { Button, EmptyState, FieldLabel, FormError, SelectInput, TextInput } fro
 import { CheckList, CheckPill, endedLabel, pct, Pill, SectionTitle, Transcript } from "./ui";
 
 const CONCURRENCY = 3;
+
+/** Deletes runs (and their results). Returns an error message, or "" when it worked. */
+async function deleteRuns(body: { ids: string[] } | { all: true }) {
+  const res = await fetch("/api/evals/runs", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (res.ok) return "";
+  const data = await res.json().catch(() => ({}));
+  return data.error || `Could not delete (${res.status})`;
+}
 const MAX_STEPS = 60;
 
 /** Steps each result until it is done. A result already being driven in this tab is skipped. */
@@ -53,6 +61,7 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
   const [label, setLabel] = useState("");
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const runs = useQuery({
     queryKey: ["eval-runs"],
@@ -100,6 +109,14 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
     } finally {
       setStarting(false);
     }
+  };
+
+  const remove = async (body: { ids: string[] } | { all: true }, question: string) => {
+    if (!confirm(question)) return;
+    setDeleteError(await deleteRuns(body));
+    if ("ids" in body && openRun && body.ids.includes(openRun)) setOpenRun(null);
+    if ("all" in body) setOpenRun(null);
+    refresh();
   };
 
   return (
@@ -162,7 +179,21 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
       )}
 
       <div className="mt-12">
-        <SectionTitle>Runs</SectionTitle>
+        <SectionTitle
+          aside={
+            runs.data?.runs.length ? (
+              <button
+                className="text-[12.5px] text-zinc-600 hover:text-rose-300"
+                onClick={() => remove({ all: true }, `Delete all ${runs.data!.runs.length} runs and their results?`)}
+              >
+                Delete all runs
+              </button>
+            ) : null
+          }
+        >
+          Runs
+        </SectionTitle>
+        <FormError>{deleteError}</FormError>
         {runs.isPending ? (
           <p className="text-[13px] text-zinc-600">Loading…</p>
         ) : !runs.data?.runs.length ? (
@@ -174,7 +205,8 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
               const open = openRun === r.id;
               return (
                 <li key={r.id}>
-                  <button onClick={() => setOpenRun(open ? null : r.id)} className="w-full py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-left hover:bg-white/[0.02]">
+                  <div className="flex items-center gap-3">
+                  <button onClick={() => setOpenRun(open ? null : r.id)} className="flex-1 min-w-0 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-left hover:bg-white/[0.02]">
                     <span className="text-[13.5px] text-zinc-100">{r.label || r.prompt_name}</span>
                     {r.label && <span className="text-[12.5px] text-zinc-500">{r.prompt_name}</span>}
                     <span className="text-[12.5px] text-zinc-600">{new Date(r.created_at).toLocaleString([], { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
@@ -186,6 +218,14 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
                       {s.errored > 0 && <Pill tone="bad">{s.errored} errors</Pill>}
                     </span>
                   </button>
+                  <button
+                    className="shrink-0 text-[12.5px] text-zinc-600 hover:text-rose-300"
+                    onClick={() => remove({ ids: [r.id] }, "Delete this run and its results?")}
+                    aria-label={`Delete run ${r.label || r.prompt_name}`}
+                  >
+                    Delete
+                  </button>
+                  </div>
                   {open && <RunDetail runId={r.id} drive={drive} active={active} errors={errors} />}
                 </li>
               );
@@ -233,7 +273,8 @@ function RunDetail({ runId, drive, active, errors }: { runId: string; drive: (id
           className="ml-auto text-[12.5px] text-zinc-600 hover:text-rose-300"
           onClick={async () => {
             if (!confirm("Delete this run and its results?")) return;
-            await fetch(`/api/evals/runs/${runId}`, { method: "DELETE" });
+            const err = await deleteRuns({ ids: [runId] });
+            if (err) alert(err);
             qc.invalidateQueries({ queryKey: ["eval-runs"] });
           }}
         >

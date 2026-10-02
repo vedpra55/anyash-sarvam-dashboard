@@ -174,6 +174,7 @@ Deno.test("the agent has Sarvam's end_interaction tool, and plain text never end
     const a = await agentTurn("key", "system", [t("agent", "Namaste"), t("parent", "Aap kaun?")]);
     assertEquals(a.ends, false);
     assertEquals(s.bodies[0].tools, [END_INTERACTION_TOOL]);
+    assertEquals(s.bodies[0].reasoning_effort, "none"); // OpenAI refuses function tools with reasoning on
     assert(!String(s.bodies[0].messages[0].content).includes("END_CALL"));
   } finally {
     s.restore();
