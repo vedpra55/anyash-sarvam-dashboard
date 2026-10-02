@@ -6,19 +6,28 @@
 import { chatAgent, chatJson } from "./openai.ts";
 import { renderTemplate, type Turn } from "./transcript.ts";
 
-/** Sarvam's built-in end_interaction tool, word for word (agent Anyash-Heal, version 31). */
+/**
+ * The end_interaction tool the agent has on Sarvam: same name and end_message parameter.
+ *
+ * The description is not Sarvam's word for word. Sarvam's says "Only send the audio message as part
+ * of the tool parameter (end_message) and do not pass anything as content output", which Sarvam's own
+ * runtime handles but OpenAI's model reads as "speak through this tool": it called end_interaction
+ * with ordinary replies and the calls ended after one or two turns. This wording keeps Sarvam's
+ * meaning (end gracefully at a natural end, or when the instructions or the user say so, with a
+ * closing statement in the conversation's language) and makes clear it is only for the end.
+ */
 export const END_INTERACTION_TOOL = {
   type: "function",
   function: {
     name: "end_interaction",
     description:
-      "Use this tool when you want to end the conversation gracefully when conversation reaches a natural end, or mentioned in the instructions or when the user requests to end the call. You should always generate a closing statement with this tool call. This message should be in the current language of the conversation.\nImportant: Only send the audio message as part of the tool parameter (end_message) and do not pass anything as content output.",
+      "Hang up the phone call. Use it only when the conversation has reached its natural end, when your instructions say to end the call, or when the user wants to end the call. Never use it to say an ordinary reply: while the conversation is still going, answer as normal text and do not call this tool. When you do end the call, put your closing statement (the goodbye, in the current language of the conversation) in end_message.",
     parameters: {
       type: "object",
       properties: {
         end_message: {
           type: "string",
-          description: "Closing statement to be sent when end_interaction is called,Example: 'Thank you for calling, have a great day!'",
+          description: "The closing statement spoken just before the call is hung up, for example a warm goodbye.",
         },
       },
       required: ["end_message"],
@@ -44,7 +53,8 @@ export async function agentTurn(apiKey: string, system: string, turns: Turn[]) {
   const closing = end ? String(end.args.end_message ?? "").trim() : "";
   const spoken = content.trim();
   const text = [spoken, closing && closing !== spoken ? closing : ""].filter(Boolean).join(" ");
-  return { text, ends: Boolean(end), tokens };
+  // Kept on the turn so a call that ends early can be checked: was it a goodbye, or a reply sent through the tool?
+  return { text, ends: Boolean(end), end: end ? { said: spoken, end_message: closing } : undefined, tokens };
 }
 
 export interface ParentPersona {

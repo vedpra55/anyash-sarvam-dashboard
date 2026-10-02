@@ -6,6 +6,8 @@
 export interface Turn {
   role: "agent" | "parent";
   text: string;
+  /** On the agent turn that ended the call: what it said as a reply and what it passed as end_message. */
+  end?: { said: string; end_message: string };
 }
 
 export const CALL_LIMIT_SECONDS = 240;

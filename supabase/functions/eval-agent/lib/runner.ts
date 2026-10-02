@@ -111,7 +111,7 @@ export async function stepResult(supabase: SupabaseClient, apiKey: string, resul
       }
       const a = await agentTurn(apiKey, system, turns);
       tokens += a.tokens;
-      turns.push({ role: "agent", text: a.text });
+      turns.push(a.end ? { role: "agent", text: a.text, end: a.end } : { role: "agent", text: a.text });
       if (a.ends) {
         ended = "agent_end";
         break;

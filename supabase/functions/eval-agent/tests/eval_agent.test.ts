@@ -168,12 +168,14 @@ function stubAgent(message: Record<string, unknown>) {
   return { bodies, restore: () => (globalThis.fetch = real) };
 }
 
-Deno.test("the agent has Sarvam's end_interaction tool, and plain text never ends the call", async () => {
+Deno.test("the agent has an end_interaction tool for hanging up only, and plain text never ends the call", async () => {
   const s = stubAgent({ content: "Main Anyaash hoon. Priya ne mujhe aapke liye set kiya hai." });
   try {
     const a = await agentTurn("key", "system", [t("agent", "Namaste"), t("parent", "Aap kaun?")]);
     assertEquals(a.ends, false);
     assertEquals(s.bodies[0].tools, [END_INTERACTION_TOOL]);
+    assertEquals(END_INTERACTION_TOOL.function.name, "end_interaction");
+    assert(END_INTERACTION_TOOL.function.description.includes("Never use it to say an ordinary reply"));
     assertEquals(s.bodies[0].reasoning_effort, "none"); // OpenAI refuses function tools with reasoning on
     assert(!String(s.bodies[0].messages[0].content).includes("END_CALL"));
   } finally {
@@ -189,6 +191,7 @@ Deno.test("calling end_interaction ends the call and its end_message is the last
   try {
     const a = await agentTurn("key", "system", [t("agent", "Namaste"), t("parent", "Theek hai beta, chalo.")]);
     assertEquals([a.ends, a.text], [true, "Kal phir baat karenge, Mummy Ji."]);
+    assertEquals(a.end, { said: "", end_message: "Kal phir baat karenge, Mummy Ji." });
   } finally {
     s.restore();
   }

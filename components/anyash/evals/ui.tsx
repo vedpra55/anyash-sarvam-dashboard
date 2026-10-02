@@ -51,6 +51,11 @@ export function Transcript({ turns, empty = "No conversation yet." }: { turns: T
           >
             <span className="block text-[11px] uppercase tracking-wide text-zinc-500 mb-0.5">{t.role === "agent" ? "Anyash" : "Parent"}</span>
             {t.text || <em className="text-zinc-500">(silence)</em>}
+            {t.end && (
+              <span className="block mt-1 text-[11.5px] text-zinc-500" title={`Reply: ${t.end.said || "(none)"}\nend_message: ${t.end.end_message || "(none)"}`}>
+                Hung up with end_interaction
+              </span>
+            )}
           </div>
         </div>
       ))}
