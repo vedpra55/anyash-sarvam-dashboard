@@ -3,6 +3,8 @@ import { getServiceSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+const MAX_REPEAT = 5;
+
 /** The latest runs with a pass count each. */
 export async function GET() {
   const supabase = getServiceSupabase();
@@ -56,9 +58,14 @@ export async function POST(req: NextRequest) {
     .single();
   if (error || !run) return NextResponse.json({ error: error?.message || "Could not start the run." }, { status: 500 });
 
+  // Each scenario can run several times, as on voice platforms: 3/3 works, 2/3 is flaky, 0/3 is broken.
+  const repeat = Math.min(MAX_REPEAT, Math.max(1, Math.round(Number(body.repeat) || 1)));
+  const rows = scenarios.flatMap((s) =>
+    Array.from({ length: repeat }, (_, i) => ({ run_id: run.id, scenario_id: s.id, scenario_name: repeat > 1 ? `${s.name} · ${i + 1}/${repeat}` : s.name })),
+  );
   const { data: results, error: resErr } = await supabase
     .from("eval_results")
-    .insert(scenarios.map((s) => ({ run_id: run.id, scenario_id: s.id, scenario_name: s.name })))
+    .insert(rows)
     .select("id");
   if (resErr) return NextResponse.json({ error: resErr.message }, { status: 500 });
   return NextResponse.json({ runId: run.id, resultIds: (results || []).map((r) => r.id) });

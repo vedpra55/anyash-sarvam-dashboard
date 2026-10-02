@@ -12,20 +12,23 @@ const PROMPT_FILES = [
   { file: "anyash_v2.txt", name: "New short prompt (v2) + everyday tips" },
 ];
 
-/** Adds the starting scenarios and the saved prompts. Safe to run again: it only adds what is missing. */
+/** Adds or updates the starting scenarios and adds the saved prompts. Safe to run again. */
 export async function POST() {
   const supabase = getServiceSupabase();
-  const added = { scenarios: 0, prompts: 0, skippedPrompts: [] as string[] };
+  const added = { scenarios: 0, updated: 0, prompts: 0, skippedPrompts: [] as string[] };
 
+  // Starting scenarios are matched by slug: new ones are added and existing ones are brought up to
+  // date with this file. Scenarios you created yourself (no slug, or another slug) are not touched.
   const { data: have } = await supabase.from("eval_scenarios").select("slug");
   const slugs = new Set((have || []).map((s) => s.slug));
-  const rows = SEED_SCENARIOS.filter((s) => !slugs.has(s.slug))
-    .map((s) => cleanScenario(s))
-    .flatMap((r) => ("value" in r ? [r.value] : []));
+  const rows: Record<string, unknown>[] = SEED_SCENARIOS.map((s) => cleanScenario(s)).flatMap((r) =>
+    "value" in r ? [{ ...r.value, updated_at: new Date().toISOString() }] : [],
+  );
   if (rows.length) {
-    const { error } = await supabase.from("eval_scenarios").insert(rows);
+    const { error } = await supabase.from("eval_scenarios").upsert(rows, { onConflict: "slug" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    added.scenarios = rows.length;
+    added.scenarios = rows.filter((r) => !slugs.has(r.slug as string)).length;
+    added.updated = rows.length - added.scenarios;
   }
 
   const { data: prompts } = await supabase.from("eval_prompts").select("name");

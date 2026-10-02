@@ -3,7 +3,7 @@ import { fakeDb, stubModel } from "../../sarvam-call-handler/tests/fake_db.ts";
 import { estimateSeconds, renderTemplate, talkStats, type Turn } from "../lib/transcript.ts";
 import { overall, runDeterministic } from "../lib/graders.ts";
 import { stepResult } from "../lib/runner.ts";
-import { agentTurn, END_INTERACTION_TOOL } from "../lib/agent.ts";
+import { agentTurn, END_INTERACTION_TOOL, parentTurn, REAL_PARENT_LINES } from "../lib/agent.ts";
 
 const t = (role: "agent" | "parent", text: string): Turn => ({ role, text });
 const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
@@ -97,7 +97,7 @@ function world() {
 function model() {
   let parentCalls = 0;
   return stubModel((system, user) => {
-    if (system.includes("You play one person")) {
+    if (system.includes("You play an elderly Indian parent")) {
       parentCalls++;
       return { say: parentCalls <= 2 ? `Haan beta, aaj bahut kuch hua, ${words(20)}` : "Theek hai, namaste", hangup: parentCalls > 2 };
     }
@@ -191,5 +191,43 @@ Deno.test("calling end_interaction ends the call and its end_message is the last
     assertEquals([a.ends, a.text], [true, "Kal phir baat karenge, Mummy Ji."]);
   } finally {
     s.restore();
+  }
+});
+
+Deno.test("the simulated parent gets the real-call examples, the hidden brief and one turn to say", async () => {
+  const s = stubAgent({ content: JSON.stringify({ say: "हाँ, बोलिए।", hangup: false }) });
+  try {
+    const p = await parentTurn("key", { persona: "Sunita, wakes at five", behaviours: "Brief answers", language: "Hinglish" }, [t("agent", "नमस्ते")]);
+    assertEquals([p.say, p.hangup], ["हाँ, बोलिए।", false]);
+    const system = String(s.bodies[0].messages[0].content);
+    const user = String(s.bodies[0].messages[1].content);
+    assert(system.includes(REAL_PARENT_LINES[0]) && system.includes("Never give everything away at once"));
+    assert(user.includes("WHO YOU ARE AND WHAT YOU KNOW (private, reveal only when asked):\nSunita, wakes at five"));
+    assert(user.includes("Devanagari"), "Hinglish scenarios are spoken as a Devanagari transcript, like real calls");
+    assertEquals(s.bodies[0].temperature, undefined);
+  } finally {
+    s.restore();
+  }
+});
+
+Deno.test("the agent runs at Sarvam's temperature, and drops it if OpenAI refuses it", async () => {
+  const real = globalThis.fetch;
+  const bodies: any[] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    bodies.push(body);
+    if ("temperature" in body) {
+      return new Response(JSON.stringify({ error: { message: "Unsupported parameter: 'temperature'", param: "temperature" } }), { status: 400 });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: "हाँ जी।" } }], usage: { total_tokens: 3 } }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const a = await agentTurn("key", "system", [t("agent", "नमस्ते"), t("parent", "हाँ")]);
+    assertEquals(a.text, "हाँ जी।");
+    assertEquals([bodies[0].temperature, "temperature" in bodies[1]], [0.5, false]);
+    await agentTurn("key", "system", [t("agent", "नमस्ते"), t("parent", "हाँ")]);
+    assertEquals(bodies.length, 3, "after one refusal, temperature is not sent again");
+  } finally {
+    globalThis.fetch = real;
   }
 });

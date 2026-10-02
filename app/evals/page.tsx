@@ -29,9 +29,9 @@ export default function EvalsPage() {
     setSeeding(true);
     setSeedMsg("");
     try {
-      const d = await fetchJson<{ scenarios: number; prompts: number; skippedPrompts: string[] }>("/api/evals/seed", { method: "POST" });
+      const d = await fetchJson<{ scenarios: number; updated: number; prompts: number; skippedPrompts: string[] }>("/api/evals/seed", { method: "POST" });
       setSeedMsg(
-        `Added ${d.scenarios} scenarios and ${d.prompts} prompts.` + (d.skippedPrompts.length ? ` Could not read ${d.skippedPrompts.join(", ")}; paste them on the Prompts tab.` : ""),
+        `Added ${d.scenarios} scenarios, updated ${d.updated}, added ${d.prompts} prompts.` + (d.skippedPrompts.length ? ` Could not read ${d.skippedPrompts.join(", ")}; paste them on the Prompts tab.` : ""),
       );
       qc.invalidateQueries({ queryKey: ["eval-prompts"] });
       qc.invalidateQueries({ queryKey: ["eval-scenarios"] });
@@ -55,7 +55,7 @@ export default function EvalsPage() {
           <div className="flex items-center gap-3">
             {seedMsg && <span className="text-[12.5px] text-zinc-500 max-w-xs">{seedMsg}</span>}
             <Button size="sm" onClick={seed} disabled={seeding}>
-              {seeding ? "Loading…" : "Load starting set"}
+              {seeding ? "Loading…" : "Load / update starting set"}
             </Button>
           </div>
         </div>

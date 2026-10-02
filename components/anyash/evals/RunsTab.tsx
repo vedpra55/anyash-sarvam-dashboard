@@ -59,6 +59,7 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
   const [promptId, setPromptId] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [label, setLabel] = useState("");
+  const [repeat, setRepeat] = useState(1);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -96,7 +97,7 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
       const res = await fetch("/api/evals/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ promptId: chosenPrompt, scenarioIds: Array.from(picked), label }),
+        body: JSON.stringify({ promptId: chosenPrompt, scenarioIds: Array.from(picked), label, repeat }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not start the run.");
@@ -126,7 +127,7 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
         <EmptyState title="Nothing to run yet.">Add a prompt and some scenarios (the "Load starting set" button adds the ones we wrote).</EmptyState>
       ) : (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl">
             <FieldLabel label="Prompt to test">
               <SelectInput value={chosenPrompt} onChange={(e) => setPromptId(e.target.value)}>
                 {prompts.map((p) => (
@@ -138,6 +139,13 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
             </FieldLabel>
             <FieldLabel label="Label (optional)">
               <TextInput value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. after the tips change" />
+            </FieldLabel>
+            <FieldLabel label="Times each scenario runs">
+              <SelectInput value={String(repeat)} onChange={(e) => setRepeat(Number(e.target.value))}>
+                <option value="1">Once</option>
+                <option value="3">3 times (shows flaky results)</option>
+                <option value="5">5 times</option>
+              </SelectInput>
             </FieldLabel>
           </div>
 
@@ -171,7 +179,7 @@ export function RunsTab({ prompts, scenarios }: { prompts: EvalPrompt[]; scenari
           <FormError>{error}</FormError>
           <div className="flex items-center gap-4">
             <Button variant="primary" onClick={start} disabled={starting || picked.size === 0}>
-              {starting ? "Starting…" : `Run ${picked.size || ""} ${picked.size === 1 ? "scenario" : "scenarios"}`}
+              {starting ? "Starting…" : `Run ${picked.size || ""} ${picked.size === 1 ? "scenario" : "scenarios"}${repeat > 1 ? ` × ${repeat}` : ""}`}
             </Button>
             <span className="text-[12.5px] text-zinc-600">Runs on OpenAI through the eval-agent function. It keeps going if you leave this page open; you can resume a run later.</span>
           </div>

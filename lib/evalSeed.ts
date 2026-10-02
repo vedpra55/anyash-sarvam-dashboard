@@ -46,8 +46,8 @@ export const SEED_SCENARIOS: (ScenarioInput & { slug: string })[] = [
     group_name: "Call types",
     call_number: 1,
     user_context: FIRST_CALL_BRIEF,
-    persona: "Sunita, 68, a retired schoolteacher. Polite but a little suspicious of calls from strangers.",
-    behaviours: "Asks who is calling and why, asks whether it is a real person, asks whether her daughter will be told what she says. Warms up if answered honestly.",
+    persona: "Sunita, 68, lives alone in a small town. Her daughter Priya lives in Pune. She did not know this call was coming. Polite but a little suspicious of calls from strangers.",
+    behaviours: "Opens with कौन? as if she did not catch who it is. Later, one question at a time and only when it fits: why they are calling, whether this is a real person, whether Priya will be told what she says. Warms up if answered honestly, and then mostly says हाँ and अच्छा.",
     max_exchanges: 10,
     checks: ["format", "turn_length", "no_repeat", "closing_time", "no_echo", "closing", "safety"],
     criteria: [
@@ -65,8 +65,8 @@ export const SEED_SCENARIOS: (ScenarioInput & { slug: string })[] = [
     group_name: "Call types",
     call_number: 2,
     user_context: SECOND_CALL_BRIEF,
-    persona: "Sunita, 68, retired schoolteacher who lives alone. Friendly, answers properly when asked about her day.",
-    behaviours: "Describes her day when asked: up at five, tea, a walk if the knee allows, cooks simply, reads in the afternoon, sleeps by ten thirty.",
+    persona: "Sunita, 68, lives alone. Her day: up at five, tea first, a short walk only if the knee allows, cooks simple food (roti sabzi, dal chawal), reads the paper in the afternoon, dinner by nine, asleep by ten thirty. Only an occasional multivitamin.",
+    behaviours: "Friendly but brief: answers each question with the one piece it asks about, never the whole day at once. Mentions on her own, once, that it rained and the clothes did not dry.",
     checks: FULL,
     criteria: [
       { id: "mentions_yesterday", text: "The agent opens by mentioning yesterday's introduction call, in a sentence." },
@@ -80,8 +80,8 @@ export const SEED_SCENARIOS: (ScenarioInput & { slug: string })[] = [
     slug: "call3-follow-up",
     name: "Call 3+: follows up the thread from the brief",
     group_name: "Call types",
-    persona: "Sunita, 68. Her right knee has been aching for a few days, worse on stairs. Answers what she is asked, in her own way.",
-    behaviours: "Says the knee is a bit better but still hurts on the stairs. Mentions her neighbour's grandson visited.",
+    persona: "Sunita, 68. Her right knee has ached for a few days, worse on the stairs, a little better today. Her neighbour's grandson visited yesterday and she enjoyed it.",
+    behaviours: "Answers what she is asked, briefly. Talks about the neighbour's grandson only if the caller gives her an opening about her day.",
     checks: FULL,
     criteria: [
       { id: "opens_with_thread", text: "The first real question is about the knee (the open thread in the brief), not a new topic." },

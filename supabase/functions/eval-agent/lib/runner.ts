@@ -8,7 +8,8 @@ import { DEFAULT_CHECKS, overall, runDeterministic, type Check, type Ended } fro
 import { judge, type Criterion } from "./judge.ts";
 import { CALL_LIMIT_SECONDS, estimateSeconds, renderTemplate, renderVars, talkStats, type Turn } from "./transcript.ts";
 
-export const DEFAULT_OPENING = "Namaste {{honorific}}, main Anyaash bol raha hoon. Abhi baat kar sakte hain?";
+/** The agent's opening on Sarvam (version 31 greets by honorific), as it appears in real transcripts. */
+export const DEFAULT_OPENING = "नमस्ते {{honorific}}, मैं अन्याश बोल रहा हूँ। अभी बात कर सकते हैं?";
 const EXCHANGES_PER_STEP = 2;
 
 export interface Scenario {
