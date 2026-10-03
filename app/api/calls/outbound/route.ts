@@ -7,7 +7,6 @@ import {
 import { buildSarvamVariables, resolveCallCount } from "@/lib/prompts";
 import { getServiceSupabase, supabaseUrl } from "@/lib/supabase";
 import { getSavedAgentVersion } from "@/lib/settings";
-import { checkCallTime } from "@/lib/callTime";
 import { chooseUserContext, readBriefMode, recordBriefUse, requestBrief } from "@/lib/briefs";
 
 export const dynamic = "force-dynamic";
@@ -107,13 +106,10 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Every family is onboarded (a profile from the child) before its first call,
-      // and is never called after its latest call time (India time).
-      const timeCheck = dbProfile ? checkCallTime(dbProfile) : null;
+      // Every family is onboarded (a profile from the child) before its first call.
+      // There is no time-of-day limit: a parent can be called at any time.
       if (!dbProfile) {
         refusedReason = "This number has no parent profile yet. Add the parent (or send the onboarding link) before calling.";
-      } else if (timeCheck && !timeCheck.allowed) {
-        refusedReason = timeCheck.reason;
       } else {
         userId = dbProfile.id;
         fetchedUserContext = dbProfile.current_user_context || "";

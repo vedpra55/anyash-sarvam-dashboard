@@ -120,6 +120,20 @@ the new pre-call brief (and which one was sent), the brief mode, open and
 closed threads with the parent's last words, the living profile (current or
 with history), reflections, and the event log by call.
 
+### `/evals` — Evals (test a prompt without placing a call)
+Our own version of Sarvam's evals, run with OpenAI (no Sarvam credits).
+Tabs: **Runs** (pick a prompt and scenarios, run, see pass/fail per scenario
+with the conversation and the reason for every check), **Manual** (you play
+the parent and chat with the agent using the chosen prompt, then press Grade),
+**Scenarios** (simulated or scripted parents plus the checks and behaviour
+criteria to apply) and **Prompts** (paste or upload the prompt versions to
+test). "Load starting set" adds 22 scenarios and the two saved prompts.
+Checks: talk share, spoken format, short turns, no repeated lines and closing
+before 240 s are counted by code; feelings, no echo, open/closed doors, warm
+closing and safety, plus each scenario's own criteria, are judged by a model
+that must quote the transcript. Time is estimated from words spoken. Logic
+lives in `supabase/functions/eval-agent` (Deno tests); the page only drives it.
+
 ### `/calls` — Calls
 File: `app/calls/page.tsx`
 - Calls since **25 Sep 2026** (intentional cutoff), grouped by day, with
@@ -209,13 +223,14 @@ TanStack Query 5.
 | `/api/parents` | POST | Create a parent from the onboarding form (or update the one with the same phone). Writes the starting `current_user_context` |
 | `/api/parents/[id]/memory` | GET | Current memory plus how it changed on each call |
 | `/api/memory/[parentId]` | GET | Progressive memory: briefs with the context sent, profile facts (with history), threads, reflections, events |
+| `/api/evals/*` | various | Evals: `prompts`, `scenarios`, `runs` (create / list / detail), `step` (advance one scenario by 2 exchanges, grade when it ends), `chat` (manual turn), `grade`, `seed` |
 | `/api/decisions/[id]` | PATCH | Mark a decision card's follow-up done / not done |
 | `/api/calls/details` | GET | AI assessment, decision card and health log for one call (`attempt_id`) |
 | `/api/parents/[id]` | PATCH | `{ profile }` saves the onboarding form (starting memory rewritten only before the first real call); other fields (e.g. `current_user_context`) are saved as given |
 | `/api/onboarding/links` | POST | New single-use onboarding link |
 | `/api/onboarding/[token]` | GET / POST | Check a link / save the child's form and use up the link |
 | `/api/parents/[id]` | DELETE | Deletes daily logs, call records, decision cards, then the parent |
-| `/api/calls/outbound` | POST | Finds the Supabase profile (refuses numbers with no profile, and calls after the latest call time), syncs call count & context, calls Sarvam Outbound API. Gets a pre-call brief from `build-brief`: in `shadow` mode after the call is placed (old context sent), in `live` mode before it (brief sent; old context if the brief fails). Falls back to a **simulated** attempt if telephony env vars are missing |
+| `/api/calls/outbound` | POST | Finds the Supabase profile (refuses numbers with no profile; no time-of-day limit), syncs call count & context, calls Sarvam Outbound API. Gets a pre-call brief from `build-brief`: in `shadow` mode after the call is placed (old context sent), in `live` mode before it (brief sent; old context if the brief fails). Falls back to a **simulated** attempt if telephony env vars are missing |
 | `/api/insights` | GET | Trial call ledger for Insights: Sarvam attempts + evaluations joined with Supabase reviews, logs and follow-ups; test calls counted by reason |
 | `/api/calls` | GET | Sarvam Analytics attempts (outbound, non-test, since 25 Sep 2026), normalised, name-matched to parents, with the AI verdict from `call_records` |
 | `/api/calls/transcript` | GET | Transcript by `interaction_id` from Sarvam; falls back to `call_records.transcript` |
@@ -334,6 +349,11 @@ post-call variable, `raw_agent_variables`, `transcript`,
 `key` (PK), `value` jsonb, `updated_at`. Holds `sarvam_app_version` and
 `memory_brief_mode` (`"shadow"` | `"live"` | `"off"`).
 
+**Evals** (migration `evals`; service role only): `eval_prompts` (prompt versions
+under test), `eval_scenarios` (simulated or scripted parents, checks, criteria),
+`eval_runs` and `eval_results` (one per scenario per run: transcript, grades,
+pass/fail, tokens).
+
 **Progressive memory** (Phase 3, migration `20260930210000_progressive_memory`;
 written only by the edge functions):
 - `memory_events`: what the parent said on each real call (category, the
@@ -384,6 +404,16 @@ Two modes on POST:
    real calls (2 per run, each with a call number no other processed call of
    that parent uses) and then writes an `example` brief.
 
+### Edge Function `eval-agent` (`verify_jwt: false`, needs `x-memory-secret`)
+
+`step { result_id }` plays 2 exchanges of a scenario (the prompt under test
+answers as the agent, a persona prompt plays the parent) and saves the state, so
+every request stays short and a run can be resumed; when the call ends
+(agent closes, parent hangs up, 240 s estimated, or the turn limit) it grades
+it. `reply` gives one agent turn for manual testing; `grade` grades any
+transcript. The tested prompt is sent unchanged plus a short harness note that
+only explains the text format and the `<END_CALL>` marker.
+
 ### Edge Function `build-brief` (`verify_jwt: false`, needs `x-memory-secret`)
 
 POST `{ parent_id, call_number?, mode? }` → a 120–150 word brief (who they
@@ -395,10 +425,10 @@ sentence about what is missing ("no threads listed"), then any still missing
 are appended. With no required threads that part is simply left out.
 Deploy both functions with `scripts/bundle-functions.sh` (single-file bundles).
 
-**Bedtime guard**: `parent_profiles.preferred_call_time` / `sleep_time`
-("HH:MM", India time, editable on the parent's Profile tab). The outbound
-route refuses calls after sleep_time − 60 min (or preferred_call_time + 90
-min when sleep_time is empty) and returns the reason.
+**Call times**: `parent_profiles.preferred_call_time` / `sleep_time`
+("HH:MM", India time, editable on the parent's Profile tab) are shown on the
+parent page and used in the onboarding context. They do not limit calls: a
+parent can be called at any time.
 
 ---
 
