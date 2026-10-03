@@ -18,6 +18,7 @@
     "../lib/trial.ts",
     "../lib/callTime.ts",
     "../lib/memory.ts",
-    "../lib/onboarding.ts"
+    "../lib/onboarding.ts",
+    "../lib/onboardingLinks.ts"
   ]
 }

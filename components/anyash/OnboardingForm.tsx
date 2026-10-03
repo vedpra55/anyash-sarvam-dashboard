@@ -3,7 +3,7 @@
 import React from "react";
 import { X, Plus } from "lucide-react";
 import { LANGUAGES, RELATIONSHIPS } from "@/lib/languages";
-import { HONORIFICS, LIVING_SITUATIONS, QUESTIONS, OnboardingInput } from "@/lib/onboarding";
+import { HONORIFICS, LIVING_SITUATIONS, PARENT_ROLES, ParentRole, QUESTIONS, OnboardingInput } from "@/lib/onboarding";
 import { FieldLabel, TextInput, SelectInput, TextArea } from "./primitives";
 
 export const EMPTY_ONBOARDING: OnboardingInput = {
@@ -107,6 +107,14 @@ export function OnboardingForm({
             <TextInput id={id("name")} value={value.parent_name} autoComplete="off" placeholder="Sunita Sharma"
               onChange={(e) => set("parent_name", e.target.value)} />
           </FieldLabel>
+          <FieldLabel label="Mom or Dad" htmlFor={id("role")}>
+            <SelectInput id={id("role")} value={value.parent_role || ""} onChange={(e) => set("parent_role", e.target.value as ParentRole | "")}>
+              <option value="">Not set</option>
+              {PARENT_ROLES.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
+            </SelectInput>
+          </FieldLabel>
           <FieldLabel label={QUESTIONS.honorific} htmlFor={id("honorific")}>
             <TextInput id={id("honorific")} value={value.honorific} list={id("honorifics")} placeholder="Mummy Ji"
               onChange={(e) => set("honorific", e.target.value)} />
@@ -141,7 +149,7 @@ export function OnboardingForm({
         </div>
       </Section>
 
-      <Section title="Ghar (household)">
+      <Section title="Home">
         <fieldset>
           <legend className="block text-[13px] text-zinc-300 mb-1.5">{QUESTIONS.living_situation}</legend>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -164,19 +172,19 @@ export function OnboardingForm({
           </div>
         </fieldset>
         <FieldLabel label={QUESTIONS.household_help} htmlFor={id("help")}>
-          <TextArea id={id("help")} rows={2} value={value.household_help} placeholder="Khud banati hain; subah ek didi safai ke liye aati hain"
+          <TextArea id={id("help")} rows={2} value={value.household_help} placeholder="She cooks herself. A helper comes in the morning to clean."
             onChange={(e) => set("household_help", e.target.value)} />
         </FieldLabel>
       </Section>
 
-      <Section title="Din (day)">
+      <Section title="Day">
         <div>
           <p className="text-[13px] text-zinc-300 mb-1.5">{QUESTIONS.wake_sleep}</p>
           <div className="grid grid-cols-2 gap-3">
-            <FieldLabel label="Uthte hain" htmlFor={id("wake")}>
+            <FieldLabel label="Wakes up" htmlFor={id("wake")}>
               <TextInput id={id("wake")} type="time" value={value.wake_time} onChange={(e) => set("wake_time", e.target.value)} />
             </FieldLabel>
-            <FieldLabel label="Sote hain" htmlFor={id("sleep")}>
+            <FieldLabel label="Goes to sleep" htmlFor={id("sleep")}>
               <TextInput id={id("sleep")} type="time" value={value.sleep_time} onChange={(e) => set("sleep_time", e.target.value)} />
             </FieldLabel>
           </div>
@@ -196,14 +204,14 @@ export function OnboardingForm({
         <FieldLabel label="Conditions">
           <ListEditor items={value.conditions || []} onChange={(v) => set("conditions", v)} placeholder="High BP" addLabel="Add condition" />
         </FieldLabel>
-        <FieldLabel label="Roz ki dawai (medicines)">
-          <ListEditor items={value.medicines || []} onChange={(v) => set("medicines", v)} placeholder="Amlodipine 5 mg, subah" addLabel="Add medicine" />
+        <FieldLabel label="Daily medicines">
+          <ListEditor items={value.medicines || []} onChange={(v) => set("medicines", v)} placeholder="Amlodipine 5 mg, after breakfast" addLabel="Add medicine" />
         </FieldLabel>
       </Section>
 
       <Section title="Life">
         <FieldLabel label={QUESTIONS.enjoys} htmlFor={id("enjoys")}>
-          <TextArea id={id("enjoys")} rows={2} value={value.enjoys} placeholder="Bhajan, apna garden, pote ki baatein"
+          <TextArea id={id("enjoys")} rows={2} value={value.enjoys} placeholder="Old songs, her garden, the grandchildren"
             onChange={(e) => set("enjoys", e.target.value)} />
         </FieldLabel>
       </Section>
@@ -215,7 +223,7 @@ export function OnboardingForm({
         </FieldLabel>
       </Section>
 
-      <Section title="Aapki chinta" note="Yeh sirf aap aur Anyash team dekhenge. Mummy/Papa se kabhi nahi kaha jayega.">
+      <Section title="Your worry" note="Private. Only the Anyash team sees this. It is never said to the parent.">
         <FieldLabel label={QUESTIONS.child_worry} htmlFor={id("worry")}>
           <TextArea id={id("worry")} rows={2} value={value.child_worry}
             onChange={(e) => set("child_worry", e.target.value)} />

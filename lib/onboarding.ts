@@ -10,13 +10,40 @@ import { normalizeClock, parseClock, formatClock } from "./callTime";
 
 export type LivingSituation = "alone" | "with_spouse" | "with_family";
 
-export const LIVING_SITUATIONS: { id: LivingSituation; label: string }[] = [
-  { id: "alone", label: "Akele (alone)" },
-  { id: "with_spouse", label: "Pati / patni ke saath (with spouse)" },
-  { id: "with_family", label: "Parivaar ke saath (with family)" },
+/** Which parent the form is about. The child picks one; each form adds one parent. */
+export type ParentRole = "mother" | "father";
+
+export const PARENT_ROLES: { id: ParentRole; label: string }[] = [
+  { id: "mother", label: "Mom" },
+  { id: "father", label: "Dad" },
 ];
 
-export const HONORIFICS = ["Mummy Ji", "Papa Ji", "Amma", "Appa", "Maa", "Babuji", "Nani Ji", "Dadi Ji", "Nana Ji", "Dada Ji"];
+/** What a child usually calls each parent, offered as one-tap choices. */
+export const HONORIFICS_BY_ROLE: Record<ParentRole, string[]> = {
+  mother: ["Mummy", "Mummy Ji", "Maa", "Amma", "Mom", "Aai", "Ammi"],
+  father: ["Papa", "Papa Ji", "Pitaji", "Appa", "Dad", "Baba", "Abbu"],
+};
+
+export const LIVING_SITUATIONS: { id: LivingSituation; label: string }[] = [
+  { id: "alone", label: "Alone" },
+  { id: "with_spouse", label: "With their husband or wife" },
+  { id: "with_family", label: "With family" },
+];
+
+export const HONORIFICS = [
+  "Mummy Ji",
+  "Papa Ji",
+  "Maa",
+  "Mom",
+  "Dad",
+  "Amma",
+  "Appa",
+  "Babuji",
+  "Nani Ji",
+  "Nana Ji",
+  "Dadi Ji",
+  "Dada Ji",
+];
 
 /** What the form collects. Times are "HH:MM"; lists are one item per entry. */
 export interface OnboardingInput {
@@ -25,6 +52,8 @@ export interface OnboardingInput {
   language: string;
   phone_number: string;
   child_name: string;
+  /** Mother or father. Older profiles and the dashboard may leave it empty. */
+  parent_role?: ParentRole | "";
   relationship?: string;
   living_situation?: LivingSituation | "";
   household_help?: string;
@@ -43,23 +72,35 @@ export interface OnboardingInput {
   other_routines?: { time: string; activity: string }[];
 }
 
-/** Hinglish questions shown to the child, keyed by field. */
+/** Questions shown to the child, keyed by field. */
 export const QUESTIONS = {
-  parent_name: "Mummy/Papa ka naam",
-  honorific: "Anyash unhe kya bulaye? (Mummy Ji, Papa Ji, Amma…)",
-  language: "Woh kis bhasha mein baat karte hain?",
-  phone_number: "Unka phone number",
-  child_name: "Aapka naam",
-  relationship: "Aap unke kya lagte hain?",
-  living_situation: "Mummy/Papa kiske saath rehte hain?",
-  household_help: "Ghar pe khana kaun banata hai? Koi madad ke liye aata hai?",
-  wake_sleep: "Woh roz kitne baje uthte aur sote hain?",
-  preferred_call_time: "Unhe kis time call karna sabse achha rahega?",
-  health: "Koi health condition ya roz ki dawai?",
-  enjoys: "Unhe kya pasand hai, kis baare mein baat karna achha lagta hai?",
-  avoid_topics: "Kuch aisa jo hume unse nahi poochna chahiye?",
-  child_worry: "Aapko unke baare mein sabse zyada kis baat ki chinta hai?",
+  parent_name: "Your parent's full name",
+  honorific: "What should Anyash call them?",
+  language: "Which language do they speak most comfortably?",
+  phone_number: "Their phone number",
+  child_name: "Your name",
+  relationship: "How are you related to them?",
+  living_situation: "Who do they live with?",
+  household_help: "Who cooks at home? Does anyone come to help?",
+  wake_sleep: "When do they usually wake up and go to sleep?",
+  preferred_call_time: "What's the best time to call them?",
+  health: "Any health conditions or daily medicines?",
+  enjoys: "What do they enjoy talking about?",
+  avoid_topics: "Anything Anyash should not bring up?",
+  child_worry: "What worries you most about them?",
 } as const;
+
+/** Health conditions offered as one-tap choices. */
+export const COMMON_CONDITIONS = [
+  "High BP",
+  "Diabetes",
+  "Thyroid",
+  "Joint pain",
+  "Heart condition",
+  "High cholesterol",
+  "Asthma",
+  "Low hearing",
+];
 
 export interface ChildFact<T = string> {
   value: T;
@@ -85,6 +126,7 @@ export function validateOnboarding(raw: Partial<OnboardingInput> | null | undefi
     language: clean(r.language),
     phone_number: String(r.phone_number || "").replace(/[^\d+]/g, ""),
     child_name: clean(r.child_name),
+    parent_role: (clean(r.parent_role) as ParentRole | ""),
     relationship: clean(r.relationship),
     living_situation: (clean(r.living_situation) as LivingSituation | ""),
     household_help: clean(r.household_help),
@@ -103,24 +145,64 @@ export function validateOnboarding(raw: Partial<OnboardingInput> | null | undefi
       : undefined,
   };
 
-  if (!input.parent_name) return { ok: false, error: "Add the parent's name." };
-  if (!input.honorific) return { ok: false, error: "Add how Anyash should address them, e.g. Mummy Ji." };
-  if (!input.language) return { ok: false, error: "Choose the language they speak." };
-  if (input.phone_number.replace(/\D/g, "").length < 10) {
-    return { ok: false, error: "Add a full phone number, e.g. +91 98765 43210." };
-  }
-  if (!input.child_name) return { ok: false, error: "Add your name." };
-  if (input.living_situation && !LIVING_SITUATIONS.some((l) => l.id === input.living_situation)) {
-    return { ok: false, error: "Choose who they live with." };
-  }
+  const errors = onboardingErrors(input);
+  const first = Object.values(errors)[0];
+  if (first) return { ok: false, error: first };
   for (const field of ["wake_time", "sleep_time", "preferred_call_time"] as const) {
-    if (!input[field]) continue;
-    const clock = normalizeClock(input[field]);
-    if (!clock) return { ok: false, error: `${field.replace(/_/g, " ")} must be a time like 07:30.` };
-    input[field] = clock;
+    if (input[field]) input[field] = normalizeClock(input[field])!;
   }
   input.phone_number = normalizeIndianPhone(input.phone_number);
   return { ok: true, input };
+}
+
+export type OnboardingErrors = Partial<Record<keyof OnboardingInput, string>>;
+
+const TIME_LABELS = { wake_time: "Wake-up time", sleep_time: "Sleep time", preferred_call_time: "Call time" } as const;
+
+/**
+ * A message for each field that needs fixing, in the order the form asks them.
+ * Lets the form show the error next to the field, before the server sees it.
+ */
+export function onboardingErrors(raw: Partial<OnboardingInput> | null | undefined): OnboardingErrors {
+  const r = raw || {};
+  const errors: OnboardingErrors = {};
+  if (!clean(r.parent_name)) errors.parent_name = "Please add your parent's name.";
+  if (!clean(r.honorific)) errors.honorific = "Please choose how Anyash should call them, e.g. Mummy Ji.";
+  if (!clean(r.language)) errors.language = "Please choose the language they speak.";
+  const phone = String(r.phone_number || "").replace(/[^\d+]/g, "");
+  const digits = phone.replace(/\D/g, "");
+  if (!digits || digits === "91") errors.phone_number = "Please add their phone number.";
+  else if (digits.length < 10) errors.phone_number = "That number looks too short. Use 10 digits, e.g. 98765 43210.";
+  else if (!isValidIndianPhone(normalizeIndianPhone(phone))) {
+    errors.phone_number = "An Indian number has 10 digits after +91. Please check it, e.g. 98765 43210.";
+  }
+  if (!clean(r.child_name)) errors.child_name = "Please add your name.";
+  const role = clean(r.parent_role);
+  if (role && !PARENT_ROLES.some((p) => p.id === role)) errors.parent_role = "Please choose Mom or Dad.";
+  const living = clean(r.living_situation);
+  if (living && !LIVING_SITUATIONS.some((l) => l.id === living)) errors.living_situation = "Please choose who they live with.";
+  for (const field of ["wake_time", "sleep_time", "preferred_call_time"] as const) {
+    const value = clean(r[field]);
+    if (value && !normalizeClock(value)) errors[field] = `${TIME_LABELS[field]} should be a time like 7:30 AM.`;
+  }
+  return errors;
+}
+
+/**
+ * +91 numbers need exactly 10 digits after the code (mobiles and landlines with
+ * their STD code). Numbers from other countries only need 10 or more digits.
+ */
+export function isValidIndianPhone(phone: string): boolean {
+  if (!phone.startsWith("+91")) return phone.replace(/\D/g, "").length >= 10;
+  return /^\+91\d{10}$/.test(phone);
+}
+
+/** The 10 local digits of an Indian number typed or pasted with +91, 91 or 0 in front. */
+export function localIndianDigits(raw: string): string {
+  let d = raw.replace(/\D/g, "");
+  if (d.length === 12 && d.startsWith("91")) d = d.slice(2);
+  else if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+  return d.slice(0, 10);
 }
 
 /**
@@ -165,9 +247,10 @@ export function buildStartingContext(input: OnboardingInput): string {
   const medicines = cleanList(input.medicines).join(", ");
   const child = clean(input.child_name) || "the family";
 
+  const role = input.parent_role === "mother" ? "mother" : input.parent_role === "father" ? "father" : "";
   const lines = [
     line("PERSON", [
-      `${clean(input.honorific)} (${clean(input.parent_name)})`,
+      `${clean(input.honorific)} (${clean(input.parent_name)})${role && clean(input.child_name) ? `, ${clean(input.child_name)}'s ${role}` : ""}`,
       living ? `lives ${living}` : "",
       help ? `help at home: ${help}` : "",
     ]),
@@ -221,6 +304,7 @@ export function buildProfileRow(
     else delete facts[key];
   };
   setFact("relationship", clean(input.relationship));
+  setFact("parent_role", clean(input.parent_role));
   setFact("living_situation", clean(input.living_situation));
   setFact("household_help", clean(input.household_help));
   setFact("enjoys", clean(input.enjoys));
@@ -298,6 +382,7 @@ export function readOnboarding(parent: any): OnboardingInput {
     language: parent?.language || factValue<string>(facts.language) || "Hindi",
     phone_number: parent?.phone_number || "",
     child_name: parent?.child_name || factValue<string>(facts.family_member) || "",
+    parent_role: (factValue<string>(facts.parent_role) as ParentRole) || "",
     relationship: factValue<string>(facts.relationship) || "",
     living_situation: (factValue<string>(facts.living_situation) as LivingSituation) || "",
     household_help: factValue<string>(facts.household_help) || "",
