@@ -1,24 +1,50 @@
 "use client";
 
 import React from "react";
-import { Clock, HeartHandshake, Languages, Link2Off, Lock, Phone, RotateCw, ShieldCheck, Sparkles, WifiOff } from "lucide-react";
-import { Logo, PrimaryButton, clock12 } from "./ui";
+import { Clock, Languages, Link2Off, Phone, RotateCw, ShieldCheck, WifiOff } from "lucide-react";
+import { Logo, PrimaryButton, SecondaryButton, clock12 } from "./ui";
 
 /* ------------------------------------------------------------------ */
 /* Shell                                                               */
 /* ------------------------------------------------------------------ */
 
-/** Centered, phone-width column with safe-area padding. */
+/** Phone-width column with safe-area padding. */
 export function Page({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <main className="min-h-[100dvh] bg-ob-bg text-ob-ink">
-      <div
-        className={`mx-auto w-full max-w-[520px] px-5 ${className}`}
-        style={{ paddingTop: "max(env(safe-area-inset-top), 20px)" }}
-      >
+      <div className={`mx-auto w-full max-w-[520px] px-5 ${className}`} style={{ paddingTop: "max(env(safe-area-inset-top), 16px)" }}>
         {children}
       </div>
     </main>
+  );
+}
+
+/** Fixed action area at the bottom, above the home indicator. */
+export function BottomBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-20 bg-gradient-to-t from-ob-bg from-70% to-ob-bg/0 pt-8">
+      <div className="mx-auto w-full max-w-[520px] px-5" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Soft painted circle behind a picture, like the washes on anyash.vercel.app. */
+function Wash({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 200 200" className={`absolute inset-0 w-full h-full ${className}`} aria-hidden>
+      <defs>
+        <filter id="wash-f" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="3" seed="11" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="18" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+      <g filter="url(#wash-f)">
+        <circle cx="100" cy="104" r="86" fill="#E3EEEA" />
+        <circle cx="122" cy="84" r="50" fill="#CFE2DA" opacity="0.55" />
+      </g>
+    </svg>
   );
 }
 
@@ -29,16 +55,13 @@ export function Page({ children, className = "" }: { children: React.ReactNode; 
 export function LoadingScreen() {
   return (
     <Page>
-      <Logo />
-      <div className="mt-14 space-y-4 animate-pulse motion-reduce:animate-none" aria-label="Opening the form" role="status">
-        <div className="h-8 w-3/4 rounded-xl bg-ob-line" />
+      <Logo className="h-8" />
+      <div className="mt-12 space-y-4 animate-pulse motion-reduce:animate-none" role="status" aria-label="Opening the form">
+        <div className="mx-auto h-44 w-44 rounded-full bg-ob-mint" />
+        <div className="h-8 w-4/5 rounded-xl bg-ob-line" />
         <div className="h-4 w-full rounded-lg bg-ob-line/70" />
-        <div className="h-4 w-5/6 rounded-lg bg-ob-line/70" />
-        <div className="pt-6 space-y-3">
-          <div className="h-16 rounded-2xl bg-ob-line/60" />
-          <div className="h-16 rounded-2xl bg-ob-line/60" />
-          <div className="h-16 rounded-2xl bg-ob-line/60" />
-        </div>
+        <div className="h-4 w-2/3 rounded-lg bg-ob-line/70" />
+        <div className="pt-4 h-14 rounded-full bg-ob-line/60" />
       </div>
     </Page>
   );
@@ -49,47 +72,46 @@ export function LoadingScreen() {
 /* ------------------------------------------------------------------ */
 
 const POINTS = [
-  { icon: Phone, title: "A friendly call every day", text: "A short, warm chat to ask how they're doing." },
-  { icon: Languages, title: "In their own language", text: "Hindi, Tamil, Bengali, Marathi and more." },
-  { icon: ShieldCheck, title: "Private and safe", text: "Details are used only to make their calls personal." },
+  { icon: Phone, text: "A short, warm call every day" },
+  { icon: Languages, text: "In Hindi, Tamil, Bengali and 10 more" },
+  { icon: ShieldCheck, text: "Private. Used only for their calls" },
 ];
 
-export function WelcomeScreen({
-  friendName,
-  resumed,
-  onStart,
-}: {
-  friendName: string | null;
-  resumed: boolean;
-  onStart: () => void;
-}) {
+export function WelcomeScreen({ friendName, resumed, onStart }: { friendName: string | null; resumed: boolean; onStart: () => void }) {
   const first = friendName?.split(" ")[0];
   return (
-    <Page className="pb-40">
-      <Logo />
-      <div className="mt-10 animate-ob-in motion-reduce:animate-none">
-        <p className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full bg-ob-accent/70 text-[13px] font-medium text-ob-ink">
-          <Sparkles className="w-3.5 h-3.5" aria-hidden />
-          {first ? `Hi ${first}, you've been invited` : "You've been invited"}
-        </p>
-        <h1 className="mt-4 text-[32px] leading-[38px] font-semibold tracking-tight text-ob-ink">
-          A daily check-in call for your mom or dad
-        </h1>
-        <p className="mt-3 text-[16px] leading-[26px] text-ob-body">
-          Anyash is a caring voice companion. It calls your parent every day, chats in their language, and asks how
-          they're doing, so you worry a little less.
-        </p>
+    <Page className="pb-44">
+      <Logo className="h-8" />
 
-        <ul className="mt-8 space-y-3">
-          {POINTS.map(({ icon: Icon, title, text }) => (
-            <li key={title} className="flex items-start gap-3.5 p-4 rounded-3xl bg-ob-card ring-1 ring-ob-line shadow-[0_1px_2px_rgba(28,26,23,0.04)]">
-              <span className="w-10 h-10 rounded-2xl bg-ob-soft text-ob-ink flex items-center justify-center shrink-0">
-                <Icon className="w-5 h-5" aria-hidden />
+      <div className="relative mt-6 mx-auto w-full max-w-[340px] aspect-[720/591] animate-ob-in motion-reduce:animate-none">
+        <Wash className="scale-110" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/onboard/with-parent.webp"
+          alt="A mother smiling while talking on her phone"
+          width={720}
+          height={591}
+          className="relative w-full h-full object-contain rounded-[28px] [mask-image:radial-gradient(ellipse_at_center,black_62%,transparent_76%)]"
+        />
+      </div>
+
+      <div className="mt-4 animate-ob-in [animation-delay:80ms] motion-reduce:animate-none">
+        {first && <p className="font-script text-[30px] leading-none text-ob-brand">Hi {first},</p>}
+        <p className={`${first ? "mt-3" : ""} text-[12px] font-bold uppercase tracking-[0.14em] text-ob-brand`}>The daily health call for parents</p>
+        <h1 className="mt-2 text-[32px] leading-[1.12] font-extrabold tracking-tight text-ob-ink [text-wrap:balance]">
+          Someone to check on your mom or dad, every day.
+        </h1>
+        <p className="mt-3 text-[17px] leading-relaxed text-ob-muted">
+          <strong className="font-semibold text-ob-ink">Anyash</strong> calls your parent, chats in their language, and asks how
+          they&apos;re doing, so you worry a little less.
+        </p>
+        <ul className="mt-6 space-y-3">
+          {POINTS.map(({ icon: Icon, text }) => (
+            <li key={text} className="flex items-center gap-3 text-[16px] text-ob-body">
+              <span className="w-9 h-9 rounded-full bg-ob-mint text-ob-brand flex items-center justify-center shrink-0">
+                <Icon className="w-[18px] h-[18px]" aria-hidden />
               </span>
-              <span>
-                <span className="block text-[15px] font-semibold text-ob-ink leading-6">{title}</span>
-                <span className="block text-[14px] text-ob-muted leading-5">{text}</span>
-              </span>
+              {text}
             </li>
           ))}
         </ul>
@@ -97,11 +119,11 @@ export function WelcomeScreen({
 
       <BottomBar>
         <PrimaryButton type="button" onClick={onStart}>
-          {resumed ? "Continue where you left off" : "Let's start"}
+          {resumed ? "Continue where you left off" : "Get started"}
         </PrimaryButton>
         <p className="mt-2.5 flex items-center justify-center gap-1.5 text-[13px] text-ob-muted">
           <Clock className="w-3.5 h-3.5" aria-hidden />
-          Takes about 2 minutes · 6 short steps
+          Takes about 2 minutes
         </p>
       </BottomBar>
     </Page>
@@ -109,15 +131,44 @@ export function WelcomeScreen({
 }
 
 /* ------------------------------------------------------------------ */
-/* Bottom bar                                                          */
+/* Checkpoint after the required questions                             */
 /* ------------------------------------------------------------------ */
 
-/** Fixed action area at the bottom, above the home indicator. */
-export function BottomBar({ children }: { children: React.ReactNode }) {
+export function GateView({
+  childName,
+  who,
+  onMore,
+  onFinish,
+  headingRef,
+}: {
+  childName: string;
+  who: string;
+  onMore: () => void;
+  onFinish: () => void;
+  headingRef: React.Ref<HTMLHeadingElement>;
+}) {
+  const first = childName.split(" ")[0];
   return (
-    <div className="fixed inset-x-0 bottom-0 z-20 bg-gradient-to-t from-ob-bg via-ob-bg to-ob-bg/0 pt-6">
-      <div className="mx-auto w-full max-w-[520px] px-5" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}>
-        {children}
+    <div className="text-center">
+      <div className="relative mx-auto w-40 h-40 animate-ob-pop motion-reduce:animate-none">
+        <Wash />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/onboard/check.webp" alt="" width={360} height={360} className="relative w-full h-full object-contain p-4" />
+      </div>
+      {first && <p className="mt-4 font-script text-[30px] leading-none text-ob-brand">Well done, {first}!</p>}
+      <h1 ref={headingRef} tabIndex={-1} className="mt-3 text-[28px] leading-[1.15] font-extrabold tracking-tight text-ob-ink outline-none [text-wrap:balance]">
+        That&apos;s all we need to start.
+      </h1>
+      <p className="mt-3 text-[17px] leading-relaxed text-ob-muted [text-wrap:balance]">
+        Want to tell us a little more about {who}? It helps Anyash make every call feel personal. About 1 minute.
+      </p>
+      <div className="mt-8 space-y-3">
+        <PrimaryButton type="button" onClick={onMore}>
+          Add a few more details
+        </PrimaryButton>
+        <SecondaryButton type="button" onClick={onFinish}>
+          Finish now
+        </SecondaryButton>
       </div>
     </div>
   );
@@ -129,90 +180,89 @@ export function BottomBar({ children }: { children: React.ReactNode }) {
 
 export interface DoneSummary {
   childName: string;
+  /** "your mom" / "your dad" */
+  parent: string;
+  /** What the child calls them, e.g. "Mummy". */
   who: string;
-  parentName: string;
+  /** "her" / "him" */
+  her: string;
   callTime: string;
   language: string;
   hadWorry: boolean;
 }
 
+const CONFETTI = Array.from({ length: 18 }, (_, i) => {
+  const angle = (i / 18) * Math.PI * 2;
+  const dist = 90 + (i % 3) * 28;
+  return {
+    dx: `${Math.round(Math.cos(angle) * dist)}px`,
+    dy: `${Math.round(Math.sin(angle) * dist - 20)}px`,
+    rot: `${(i % 2 ? 1 : -1) * (120 + i * 20)}deg`,
+    color: ["#174A40", "#8FB5A6", "#F1D37A", "#2C6B5C", "#E7A595"][i % 5],
+    delay: `${(i % 4) * 40}ms`,
+    round: i % 3 === 0,
+  };
+});
+
 export function ThankYouScreen({ done, headingRef }: { done: DoneSummary; headingRef?: React.Ref<HTMLHeadingElement> }) {
   const first = done.childName.split(" ")[0];
-  const parentFirst = done.parentName.split(" ")[0] || done.who;
   const when = done.callTime ? `around ${clock12(done.callTime)}` : "at a time that suits them";
   const steps = [
-    {
-      icon: Phone,
-      title: `Anyash will call ${parentFirst}`,
-      text: `Usually ${when}, in ${done.language || "their language"}.`,
-    },
-    {
-      icon: HeartHandshake,
-      title: "The first call is a gentle hello",
-      text: "Anyash introduces itself and gets to know them slowly. No long questions.",
-    },
+    { title: `Anyash will call ${done.who}`, text: `Usually ${when}, in ${done.language || "their language"}.` },
+    { title: "The first call is a gentle hello", text: `Anyash introduces itself and gets to know ${done.her} slowly.` },
     done.hadWorry
-      ? { icon: Lock, title: "What worries you stays private", text: "Anyash never mentions it to them." }
-      : { icon: ShieldCheck, title: "Your answers stay private", text: "They're used only to make the calls feel personal." },
+      ? { title: "Your worry stays private", text: `Anyash will never mention it to ${done.her}.` }
+      : { title: "Your answers stay private", text: "Used only to make the calls feel personal." },
   ];
 
   return (
-    <Page className="pb-16">
-      <Logo />
-      <div className="mt-12 flex flex-col items-center text-center">
-        <div className="relative animate-ob-pop motion-reduce:animate-none">
-          <span className="absolute inset-0 rounded-full bg-ob-good/15 scale-[1.45]" aria-hidden />
-          <span className="relative w-20 h-20 rounded-full bg-ob-good flex items-center justify-center shadow-[0_10px_30px_-8px_rgba(47,125,91,0.6)]">
-            <svg viewBox="0 0 24 24" className="w-10 h-10" fill="none" aria-hidden>
-              <path
-                d="M5 12.5l4.5 4.5L19 7.5"
-                stroke="white"
-                strokeWidth="2.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeDasharray="48"
-                className="animate-ob-draw motion-reduce:animate-none"
+    <Page className="pb-14">
+      <Logo className="h-8" />
+      <div className="mt-8 flex flex-col items-center text-center">
+        <div className="relative w-44 h-44">
+          <Wash />
+          <div className="absolute inset-0 pointer-events-none motion-reduce:hidden" aria-hidden>
+            {CONFETTI.map((c, i) => (
+              <span
+                key={i}
+                className={`absolute left-1/2 top-1/2 -ml-1 -mt-1 w-2 h-2.5 animate-ob-confetti ${c.round ? "rounded-full" : "rounded-[2px]"}`}
+                style={{ background: c.color, animationDelay: c.delay, ["--dx" as string]: c.dx, ["--dy" as string]: c.dy, ["--rot" as string]: c.rot } as React.CSSProperties}
               />
-            </svg>
-          </span>
+            ))}
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/onboard/check.webp" alt="" width={360} height={360} className="relative w-full h-full object-contain p-5 animate-ob-pop motion-reduce:animate-none" />
         </div>
+        {first && <p className="mt-2 font-script text-[34px] leading-none text-ob-brand animate-ob-in [animation-delay:200ms] motion-reduce:animate-none">Thank you, {first}!</p>}
         <h1
           ref={headingRef}
           tabIndex={-1}
-          className="mt-8 text-[30px] leading-[36px] font-semibold tracking-tight text-ob-ink outline-none animate-ob-in motion-reduce:animate-none"
+          className="mt-3 text-[28px] leading-[1.15] font-extrabold tracking-tight text-ob-ink outline-none [text-wrap:balance] animate-ob-in [animation-delay:260ms] motion-reduce:animate-none"
         >
-          {first ? `Thank you, ${first}!` : "Thank you!"}
+          {done.who}&apos;s details are saved.
         </h1>
-        <p className="mt-2 text-[16px] leading-[26px] text-ob-body animate-ob-in motion-reduce:animate-none">
-          {done.who}'s details are saved.
-        </p>
       </div>
 
-      <section className="mt-10 rounded-3xl bg-ob-card p-5 ring-1 ring-ob-line shadow-[0_1px_2px_rgba(28,26,23,0.04)] animate-ob-in [animation-delay:120ms] motion-reduce:animate-none">
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-ob-muted">What happens next</h2>
-        <ol className="mt-4 space-y-5">
-          {steps.map(({ icon: Icon, title, text }, i) => (
-            <li key={title} className="flex items-start gap-3.5">
-              <span className="relative w-10 h-10 rounded-2xl bg-ob-soft text-ob-ink flex items-center justify-center shrink-0">
-                <Icon className="w-5 h-5" aria-hidden />
-                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-ob-ink text-white text-[11px] font-semibold flex items-center justify-center">
-                  {i + 1}
-                </span>
-              </span>
+      <section className="mt-8 rounded-[24px] border border-ob-line bg-ob-card p-5 shadow-[0_1px_2px_rgba(32,39,36,0.04)] animate-ob-in [animation-delay:360ms] motion-reduce:animate-none">
+        <h2 className="text-[12px] font-bold uppercase tracking-[0.14em] text-ob-brand">What happens next</h2>
+        <ol className="mt-4 space-y-4">
+          {steps.map((s, i) => (
+            <li key={s.title} className="flex items-start gap-3.5">
+              <span className="w-8 h-8 rounded-full bg-ob-brand text-white text-[14px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
               <span>
-                <span className="block text-[15px] font-semibold text-ob-ink leading-6">{title}</span>
-                <span className="block text-[14px] text-ob-muted leading-5">{text}</span>
+                <span className="block text-[16px] font-semibold text-ob-ink leading-6">{s.title}</span>
+                <span className="block text-[15px] text-ob-muted leading-6">{s.text}</span>
               </span>
             </li>
           ))}
         </ol>
       </section>
 
-      <div className="mt-3 rounded-3xl bg-ob-accent/50 p-4 text-[14.5px] leading-6 text-ob-ink animate-ob-in [animation-delay:200ms] motion-reduce:animate-none">
-        <span className="font-semibold">Tip:</span> Let {done.who} know Anyash will be calling, so they pick up.
+      <div className="mt-3 rounded-[24px] bg-ob-mint p-4 text-[15px] leading-6 text-ob-ink animate-ob-in [animation-delay:440ms] motion-reduce:animate-none">
+        <span className="font-semibold text-ob-brand">Tip:</span> Tell {done.who} that Anyash will be calling, so {done.her === "him" ? "he picks" : done.her === "her" ? "she picks" : "they pick"} up.
       </div>
 
-      <p className="mt-8 text-center text-[13.5px] leading-5 text-ob-muted">
+      <p className="mt-8 text-center text-[14px] leading-6 text-ob-muted">
         You can close this page now.
         <br />
         Need to change something? Tell the person who sent you this link.
@@ -235,29 +285,17 @@ const PROBLEM_TITLES: Record<ProblemKind, string> = {
   offline: "Can't connect right now",
 };
 
-export function ProblemScreen({
-  kind,
-  message,
-  onRetry,
-}: {
-  kind: ProblemKind;
-  message: string;
-  onRetry?: () => void;
-}) {
+export function ProblemScreen({ kind, message, onRetry }: { kind: ProblemKind; message: string; onRetry?: () => void }) {
   const Icon = kind === "offline" ? WifiOff : kind === "used" ? ShieldCheck : Link2Off;
   return (
-    <Page className="pb-16">
-      <Logo />
+    <Page className="pb-14">
+      <Logo className="h-8" />
       <div className="mt-16 animate-ob-in motion-reduce:animate-none">
-        <span
-          className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
-            kind === "used" ? "bg-ob-good/10 text-ob-good" : "bg-ob-soft text-ob-muted"
-          }`}
-        >
-          <Icon className="w-6 h-6" aria-hidden />
+        <span className={`w-16 h-16 rounded-full flex items-center justify-center ${kind === "used" ? "bg-ob-mint text-ob-brand" : "bg-ob-soft text-ob-muted"}`}>
+          <Icon className="w-7 h-7" aria-hidden />
         </span>
-        <h1 className="mt-6 text-[26px] leading-[32px] font-semibold tracking-tight text-ob-ink">{PROBLEM_TITLES[kind]}</h1>
-        <p className="mt-2 text-[16px] leading-[26px] text-ob-body">{message}</p>
+        <h1 className="mt-6 text-[28px] leading-[1.15] font-extrabold tracking-tight text-ob-ink">{PROBLEM_TITLES[kind]}</h1>
+        <p className="mt-3 text-[17px] leading-relaxed text-ob-muted">{message}</p>
         {onRetry && (
           <PrimaryButton type="button" onClick={onRetry} className="mt-8">
             <RotateCw className="w-4 h-4" aria-hidden />

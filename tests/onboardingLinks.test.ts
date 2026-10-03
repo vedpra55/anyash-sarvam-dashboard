@@ -76,3 +76,20 @@ test("field errors name each field, in the form's order", () => {
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.error, /too short/);
 });
+
+test("parent role: stored, read back, and named in the starting memory", async () => {
+  const { buildProfileRow, buildStartingContext, readOnboarding } = await import("../lib/onboarding");
+  const base = { parent_name: "Sunita Sharma", honorific: "Mummy", language: "Hindi", phone_number: "+919876543210", child_name: "Priya" };
+  const v = validateOnboarding({ ...base, parent_role: "mother" });
+  assert.ok(v.ok);
+  if (!v.ok) return;
+  assert.match(buildStartingContext(v.input), /^PERSON: Mummy \(Sunita Sharma\), Priya's mother/);
+  const row = buildProfileRow(v.input);
+  assert.deepEqual(row.facts.parent_role, { value: "mother", source: "child", confirmed: false });
+  assert.equal(readOnboarding(row).parent_role, "mother");
+  // Left out (dashboard, older profiles): no role in the memory, no error.
+  const none = validateOnboarding(base);
+  assert.ok(none.ok);
+  if (none.ok) assert.match(buildStartingContext(none.input), /^PERSON: Mummy \(Sunita Sharma\)\n/);
+  assert.equal(validateOnboarding({ ...base, parent_role: "uncle" as any }).ok, false);
+});

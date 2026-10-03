@@ -1,422 +1,557 @@
 "use client";
 
 import React from "react";
-import { Home, Lock, User, Users } from "lucide-react";
-import { LANGUAGES, RELATIONSHIPS } from "@/lib/languages";
+import { Home, User, Users } from "lucide-react";
+import { LANGUAGES } from "@/lib/languages";
 import {
   COMMON_CONDITIONS,
-  HONORIFICS,
-  LIVING_SITUATIONS,
+  HONORIFICS_BY_ROLE,
   LivingSituation,
   OnboardingErrors,
   OnboardingInput,
+  ParentRole,
 } from "@/lib/onboarding";
-import {
-  ChipGroup,
-  ChoiceCard,
-  clock12,
-  Field,
-  LineList,
-  MultiChips,
-  PhoneField,
-  TextAreaField,
-  TextField,
-  TimeChoice,
-  Chip,
-} from "./ui";
+import { Art, ArtName } from "./art";
+import { Chip, FieldError, LineList, MultiChips, OptionCard, PhoneField, TextAreaField, TextField, TimeChoice, clock12 } from "./ui";
 
 /* ------------------------------------------------------------------ */
-/* Step definitions                                                    */
+/* Order                                                               */
 /* ------------------------------------------------------------------ */
 
-export type StepId = "you" | "parent" | "reach" | "day" | "health" | "notes";
+export type StepKey =
+  | "child_name"
+  | "role"
+  | "parent_name"
+  | "honorific"
+  | "phone"
+  | "language"
+  | "call_time"
+  | "living"
+  | "wake"
+  | "sleep"
+  | "conditions"
+  | "medicines"
+  | "enjoys"
+  | "avoid"
+  | "worry";
 
-export interface StepDef {
-  id: StepId;
-  /** Short name used on the review screen. */
-  name: string;
-  fields: (keyof OnboardingInput)[];
-  optional?: boolean;
-}
+/** Asked of everyone, one per screen. */
+export const REQUIRED_STEPS: StepKey[] = ["child_name", "role", "parent_name", "honorific", "phone", "language", "call_time"];
+/** Offered after the required ones; each can be skipped. */
+export const EXTRA_STEPS: StepKey[] = ["living", "wake", "sleep", "conditions", "medicines", "enjoys", "avoid", "worry"];
 
-export const STEPS: StepDef[] = [
-  { id: "you", name: "About you", fields: ["child_name", "relationship"] },
-  { id: "parent", name: "Your parent", fields: ["parent_name", "honorific"] },
-  { id: "reach", name: "Phone and language", fields: ["phone_number", "preferred_call_time", "language"] },
-  { id: "day", name: "Their day", fields: ["living_situation", "household_help", "wake_time", "sleep_time"], optional: true },
-  { id: "health", name: "Health", fields: ["conditions", "medicines"], optional: true },
-  { id: "notes", name: "Good to know", fields: ["enjoys", "avoid_topics", "child_worry"], optional: true },
-];
+/** The form fields each step fills, for its errors and for "has an answer". */
+export const STEP_FIELDS: Record<StepKey, (keyof OnboardingInput)[]> = {
+  child_name: ["child_name"],
+  role: ["parent_role"],
+  parent_name: ["parent_name"],
+  honorific: ["honorific"],
+  phone: ["phone_number"],
+  language: ["language"],
+  call_time: ["preferred_call_time"],
+  living: ["living_situation"],
+  wake: ["wake_time"],
+  sleep: ["sleep_time"],
+  conditions: ["conditions"],
+  medicines: ["medicines"],
+  enjoys: ["enjoys"],
+  avoid: ["avoid_topics"],
+  worry: ["child_worry"],
+};
 
-/** Whether the person typed or picked anything on this step. */
-export function stepHasAnswers(step: StepDef, form: OnboardingInput): boolean {
-  return step.fields.some((f) => {
+/** Steps that can be left empty. */
+export const OPTIONAL_STEPS = new Set<StepKey>(["call_time", ...EXTRA_STEPS]);
+
+export function hasAnswer(step: StepKey, form: OnboardingInput): boolean {
+  return STEP_FIELDS[step].some((f) => {
     const v = form[f];
     return Array.isArray(v) ? v.some((x) => typeof x === "string" && x.trim()) : typeof v === "string" && v.trim() !== "";
   });
 }
 
-export function stepErrors(step: StepDef, errors: OnboardingErrors): OnboardingErrors {
+/** Errors to show for a step. The public form also needs Mom or Dad. */
+export function stepErrors(step: StepKey, form: OnboardingInput, errors: OnboardingErrors): OnboardingErrors {
   const out: OnboardingErrors = {};
-  for (const f of step.fields) if (errors[f]) out[f] = errors[f];
+  for (const f of STEP_FIELDS[step]) if (errors[f]) out[f] = errors[f];
+  if (step === "role" && !form.parent_role) out.parent_role = "Please choose Mom or Dad.";
   return out;
 }
 
-/** How the form refers to the parent once it knows: "Mummy Ji", else "your parent". */
-export const whoOf = (form: OnboardingInput) => form.honorific.trim() || "your parent";
-const WhoCap = (form: OnboardingInput) => {
-  const who = whoOf(form);
-  return who.charAt(0).toUpperCase() + who.slice(1);
-};
-
 /* ------------------------------------------------------------------ */
-/* Step layout                                                         */
+/* Words that follow the Mom / Dad choice                              */
 /* ------------------------------------------------------------------ */
 
-export function StepHeading({
-  title,
-  intro,
-  headingRef,
-}: {
-  title: React.ReactNode;
-  intro?: React.ReactNode;
-  headingRef?: React.Ref<HTMLHeadingElement>;
-}) {
-  return (
-    <div>
-      <h1 ref={headingRef} tabIndex={-1} className="text-[26px] leading-[32px] font-semibold tracking-tight text-ob-ink outline-none">
-        {title}
-      </h1>
-      {intro && <p className="mt-2 text-[15px] leading-6 text-ob-muted">{intro}</p>}
-    </div>
-  );
+export interface Words {
+  /** "your mom" / "your dad" / "your parent" */
+  parent: string;
+  /** "Mom" / "Dad" */
+  short: string;
+  she: string;
+  her: string;
+  /** possessive: "her" / "his" / "their" */
+  hers: string;
+  /** What the child calls them, else "your mom". */
+  name: string;
+  /** "she's" / "he's" / "they're" */
+  shes: string;
+  /** The other parent: "Dad" for a mother. */
+  spouse: string;
 }
 
-interface StepProps {
+export function wordsFor(form: OnboardingInput): Words {
+  const role = form.parent_role;
+  const honorific = form.honorific.trim();
+  if (role === "mother")
+    return { parent: "your mom", short: "Mom", she: "she", her: "her", hers: "her", shes: "she's", name: honorific || "your mom", spouse: "Dad" };
+  if (role === "father")
+    return { parent: "your dad", short: "Dad", she: "he", her: "him", hers: "his", shes: "he's", name: honorific || "your dad", spouse: "Mom" };
+  return { parent: "your parent", short: "Parent", she: "they", her: "them", hers: "their", shes: "they're", name: honorific || "your parent", spouse: "their partner" };
+}
+
+export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/* ------------------------------------------------------------------ */
+/* One question                                                        */
+/* ------------------------------------------------------------------ */
+
+export interface StepProps {
   form: OnboardingInput;
-  set: <K extends keyof OnboardingInput>(key: K, v: OnboardingInput[K]) => void;
   errors: OnboardingErrors;
-  headingRef: React.Ref<HTMLHeadingElement>;
+  set: <K extends keyof OnboardingInput>(key: K, v: OnboardingInput[K]) => void;
+  /** Sets values and moves on after a short pause (one-tap answers). */
+  pick: (patch: Partial<OnboardingInput>) => void;
+  w: Words;
 }
 
-/* ------------------------------------------------------------------ */
-/* 1. About you                                                        */
-/* ------------------------------------------------------------------ */
-
-export function YouStep({ form, set, errors, headingRef }: StepProps) {
-  return (
-    <div className="space-y-8">
-      <StepHeading headingRef={headingRef} title="First, a little about you" intro="So we know who added your parent." />
-      <Field label="Your name" htmlFor="ob-child" error={errors.child_name}>
-        <TextField
-          id="ob-child"
-          name="child_name"
-          value={form.child_name}
-          placeholder="e.g. Priya Sharma"
-          autoComplete="name"
-          autoCapitalize="words"
-          enterKeyHint="next"
-          invalid={Boolean(errors.child_name)}
-          onChange={(e) => set("child_name", e.target.value)}
-        />
-      </Field>
-      <Field as="fieldset" label="You are their…" optional>
-        <ChipGroup
-          label="You are their"
-          options={RELATIONSHIPS.map((r) => ({ id: r, label: r }))}
-          value={form.relationship || ""}
-          onChange={(v) => set("relationship", v)}
-        />
-      </Field>
-    </div>
-  );
+export interface StepView {
+  art: React.ReactNode;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  body: React.ReactNode;
 }
 
-/* ------------------------------------------------------------------ */
-/* 2. Your parent                                                      */
-/* ------------------------------------------------------------------ */
+const art = (name: ArtName) => <Art name={name} className="w-full h-full" />;
 
-export function ParentStep({ form, set, errors, headingRef }: StepProps) {
-  const isCustom = form.honorific !== "" && !HONORIFICS.includes(form.honorific);
-  const [custom, setCustom] = React.useState(isCustom);
-  const showCustom = custom || isCustom;
-
-  return (
-    <div className="space-y-8">
-      <StepHeading headingRef={headingRef} title="Who should Anyash call?" intro="Tell us about the parent you'd like Anyash to call." />
-      <Field label="Their full name" htmlFor="ob-parent" hint="As they would write it." error={errors.parent_name}>
-        <TextField
-          id="ob-parent"
-          name="parent_name"
-          value={form.parent_name}
-          placeholder="e.g. Sunita Sharma"
-          autoComplete="off"
-          autoCapitalize="words"
-          enterKeyHint="next"
-          invalid={Boolean(errors.parent_name)}
-          onChange={(e) => set("parent_name", e.target.value)}
-        />
-      </Field>
-      <Field
-        as="fieldset"
-        label="What should Anyash call them?"
-        hint={
+export function stepView(step: StepKey, p: StepProps): StepView {
+  const { form, errors, set, pick, w } = p;
+  switch (step) {
+    case "child_name":
+      return {
+        art: art("name"),
+        title: "First, what's your name?",
+        subtitle: "So Anyash knows who added your parent.",
+        body: (
           <>
-            Anyash greets them with this, like{" "}
-            <span className="text-ob-ink">“Namaste {form.honorific.trim() || "Mummy Ji"}!”</span>
-          </>
-        }
-        error={errors.honorific}
-      >
-        <div role="radiogroup" aria-label="What should Anyash call them?" className="flex flex-wrap gap-2">
-          {HONORIFICS.map((h) => (
-            <Chip
-              key={h}
-              selected={!showCustom && form.honorific === h}
-              onClick={() => {
-                setCustom(false);
-                set("honorific", h);
-              }}
-            >
-              {h}
-            </Chip>
-          ))}
-          <Chip
-            selected={showCustom}
-            onClick={() => {
-              setCustom(true);
-              if (!isCustom) set("honorific", "");
-            }}
-          >
-            Something else
-          </Chip>
-        </div>
-        {showCustom && (
-          <div className="mt-2.5 animate-ob-in motion-reduce:animate-none">
-            <label htmlFor="ob-honorific" className="sr-only">
-              What should Anyash call them?
-            </label>
+            <label htmlFor="ob-child" className="sr-only">Your name</label>
             <TextField
-              id="ob-honorific"
-              value={form.honorific}
-              placeholder="e.g. Aai, Baba, Mausi Ji"
+              id="ob-child"
+              name="child_name"
+              value={form.child_name}
+              placeholder="e.g. Priya"
+              autoComplete="given-name"
+              autoCapitalize="words"
+              enterKeyHint="next"
+              invalid={Boolean(errors.child_name)}
+              aria-describedby={errors.child_name ? "ob-err" : undefined}
+              onChange={(e) => set("child_name", e.target.value)}
+            />
+            <FieldError id="ob-err">{errors.child_name}</FieldError>
+          </>
+        ),
+      };
+
+    case "role":
+      return {
+        art: null,
+        title: "Who would you like Anyash to call?",
+        subtitle: "Pick one parent. You can add the other with a new link later.",
+        body: (
+          <>
+            <div role="radiogroup" aria-label="Who would you like Anyash to call?" className="grid grid-cols-2 gap-3">
+              {(["mother", "father"] as ParentRole[]).map((role) => {
+                const selected = form.parent_role === role;
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() =>
+                      // Switching parent clears what you call them, which belonged to the other one.
+                      pick(form.parent_role && form.parent_role !== role ? { parent_role: role, honorific: "" } : { parent_role: role })
+                    }
+                    className={`relative flex flex-col items-center pt-4 pb-5 rounded-[24px] border transition-[border-color,background-color,box-shadow,transform] active:scale-[0.98] ${
+                      selected ? "border-ob-brand bg-ob-brand/[0.05] ring-2 ring-ob-brand animate-ob-tap motion-reduce:animate-none" : "border-ob-line bg-ob-card hover:border-ob-brand/40"
+                    }`}
+                  >
+                    <span className="w-28 h-28 sm:w-32 sm:h-32">
+                      <Art name={role === "mother" ? "mom" : "dad"} className="w-full h-full" />
+                    </span>
+                    <span className={`mt-2 text-[20px] font-bold ${selected ? "text-ob-brand" : "text-ob-ink"}`}>{role === "mother" ? "Mom" : "Dad"}</span>
+                    <span
+                      aria-hidden
+                      className={`absolute top-3 right-3 w-6 h-6 rounded-full border flex items-center justify-center ${selected ? "border-ob-brand bg-ob-brand" : "border-ob-line bg-ob-card"}`}
+                    >
+                      {selected && <span className="w-2 h-2 rounded-full bg-white" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <FieldError>{errors.parent_role}</FieldError>
+          </>
+        ),
+      };
+
+    case "parent_name":
+      return {
+        art: art(form.parent_role === "father" ? "dad" : "mom"),
+        title: `What's ${w.parent}'s name?`,
+        subtitle: `${cap(w.hers)} full name, as ${w.she} would write it.`,
+        body: (
+          <>
+            <label htmlFor="ob-parent" className="sr-only">{`${cap(w.parent)}'s name`}</label>
+            <TextField
+              id="ob-parent"
+              name="parent_name"
+              value={form.parent_name}
+              placeholder={form.parent_role === "father" ? "e.g. Ramesh Sharma" : "e.g. Sunita Sharma"}
               autoComplete="off"
               autoCapitalize="words"
               enterKeyHint="next"
-              autoFocus={!isCustom}
-              invalid={Boolean(errors.honorific)}
-              onChange={(e) => set("honorific", e.target.value)}
+              invalid={Boolean(errors.parent_name)}
+              aria-describedby={errors.parent_name ? "ob-err" : undefined}
+              onChange={(e) => set("parent_name", e.target.value)}
             />
+            <FieldError id="ob-err">{errors.parent_name}</FieldError>
+          </>
+        ),
+      };
+
+    case "honorific": {
+      const options = HONORIFICS_BY_ROLE[(form.parent_role || "mother") as ParentRole];
+      return {
+        art: art("chat"),
+        title: `What do you call ${w.her}?`,
+        subtitle: (
+          <>
+            Anyash will greet {w.her} the same way, like{" "}
+            <span className="font-script text-[22px] leading-none text-ob-brand whitespace-nowrap">“Namaste {form.honorific.trim() || options[0]}!”</span>
+          </>
+        ),
+        body: <HonorificPicker options={options} value={form.honorific} set={set} pick={pick} error={errors.honorific} />,
+      };
+    }
+
+    case "phone":
+      return {
+        art: art("phone"),
+        title: `What's ${w.name}'s phone number?`,
+        subtitle: "Anyash will call this number. A mobile or a landline with its area code both work.",
+        body: (
+          <>
+            <label htmlFor="ob-phone" className="sr-only">Phone number</label>
+            <PhoneField
+              id="ob-phone"
+              value={form.phone_number}
+              invalid={Boolean(errors.phone_number)}
+              describedBy={errors.phone_number ? "ob-err" : undefined}
+              onChange={(v) => set("phone_number", v)}
+            />
+            <FieldError id="ob-err">{errors.phone_number}</FieldError>
+          </>
+        ),
+      };
+
+    case "language":
+      return {
+        art: art("language"),
+        title: `Which language is ${w.name} most comfortable in?`,
+        subtitle: `Anyash will talk to ${w.her} in this language.`,
+        body: (
+          <>
+            <div role="radiogroup" aria-label="Language" className="grid grid-cols-2 gap-2.5">
+              {LANGUAGES.map((l) => (
+                <Chip
+                  key={l.id}
+                  selected={form.language === l.id}
+                  sub={l.nativeName !== l.label ? l.nativeName : " "}
+                  onClick={() => pick({ language: l.id })}
+                  className="!min-h-[64px]"
+                >
+                  {l.label}
+                </Chip>
+              ))}
+            </div>
+            <FieldError>{errors.language}</FieldError>
+          </>
+        ),
+      };
+
+    case "call_time":
+      return {
+        art: art("clock"),
+        title: `When's the best time to call ${w.her}?`,
+        subtitle: `A time ${w.shes} usually free and relaxed. Not sure? Skip it.`,
+        body: (
+          <>
+            <TimeChoice
+              label="Best time to call"
+              presets={[
+                { time: "10:00", label: "Morning" },
+                { time: "13:00", label: "Afternoon" },
+                { time: "18:00", label: "Evening" },
+                { time: "20:00", label: "Night" },
+              ]}
+              value={form.preferred_call_time || ""}
+              onPick={(v) => (v ? pick({ preferred_call_time: v }) : set("preferred_call_time", ""))}
+            />
+            <FieldError>{errors.preferred_call_time}</FieldError>
+          </>
+        ),
+      };
+
+    case "living": {
+      const icon = (I: typeof User) => (
+        <span className="w-11 h-11 rounded-xl bg-ob-mint text-ob-brand flex items-center justify-center shrink-0">
+          <I className="w-5 h-5" aria-hidden />
+        </span>
+      );
+      const options: { id: LivingSituation; title: string; hint: string; leading: React.ReactNode }[] = [
+        { id: "alone", title: "Alone", hint: `${cap(w.she)} ${w.she === "they" ? "live" : "lives"} on ${w.hers} own`, leading: icon(User) },
+        { id: "with_spouse", title: `With ${w.spouse}`, hint: "Just the two of them", leading: icon(Users) },
+        { id: "with_family", title: "With family", hint: "Children, grandchildren or others", leading: icon(Home) },
+      ];
+      return {
+        art: art("home"),
+        title: `Who does ${w.name} live with?`,
+        subtitle: "This helps Anyash ask the right things, like who cooked today.",
+        body: (
+          <div role="radiogroup" aria-label="Who do they live with?" className="space-y-2.5">
+            {options.map((o) => (
+              <OptionCard
+                key={o.id}
+                selected={form.living_situation === o.id}
+                onClick={() => (form.living_situation === o.id ? set("living_situation", "") : pick({ living_situation: o.id }))}
+                title={o.title}
+                hint={o.hint}
+                leading={o.leading}
+              />
+            ))}
           </div>
-        )}
-      </Field>
-    </div>
-  );
-}
+        ),
+      };
+    }
 
-/* ------------------------------------------------------------------ */
-/* 3. Phone and language                                               */
-/* ------------------------------------------------------------------ */
-
-const CALL_TIMES = [
-  { time: "10:00", label: "Morning" },
-  { time: "13:00", label: "Afternoon" },
-  { time: "18:00", label: "Evening" },
-  { time: "20:00", label: "Night" },
-];
-
-export function ReachStep({ form, set, errors, headingRef }: StepProps) {
-  return (
-    <div className="space-y-8">
-      <StepHeading headingRef={headingRef} title={`How to reach ${whoOf(form)}`} intro="Anyash will call this number." />
-      <Field label="Their phone number" htmlFor="ob-phone" hint="A mobile or a landline with its area code." error={errors.phone_number}>
-        <PhoneField id="ob-phone" value={form.phone_number} invalid={Boolean(errors.phone_number)} onChange={(v) => set("phone_number", v)} />
-      </Field>
-      <Field as="fieldset" label="Best time to call" optional hint="When are they usually free and relaxed?" error={errors.preferred_call_time}>
-        <TimeChoice
-          id="ob-calltime"
-          label="Best time to call"
-          presets={CALL_TIMES}
-          value={form.preferred_call_time || ""}
-          invalid={Boolean(errors.preferred_call_time)}
-          onChange={(v) => set("preferred_call_time", v)}
-        />
-      </Field>
-      <Field as="fieldset" label="Language they speak" hint="Anyash will talk to them in this language." error={errors.language}>
-        <ChipGroup
-          label="Language they speak"
-          columns={3}
-          required
-          options={LANGUAGES.map((l) => ({
-            id: l.id,
-            label: l.label,
-            sub: l.nativeName !== l.label ? l.nativeName : undefined,
-          }))}
-          value={form.language as any}
-          onChange={(v) => set("language", v)}
-        />
-      </Field>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* 4. Their day                                                        */
-/* ------------------------------------------------------------------ */
-
-const LIVING_ICONS: Record<LivingSituation, React.ReactNode> = {
-  alone: <User className="w-5 h-5" />,
-  with_spouse: <Users className="w-5 h-5" />,
-  with_family: <Home className="w-5 h-5" />,
-};
-
-const LIVING_SUBS: Record<LivingSituation, string> = {
-  alone: "They live on their own",
-  with_spouse: "Just the two of them",
-  with_family: "With children or other family",
-};
-
-export function DayStep({ form, set, errors, headingRef }: StepProps) {
-  return (
-    <div className="space-y-8">
-      <StepHeading
-        headingRef={headingRef}
-        title={`${WhoCap(form)}'s day`}
-        intro="This helps Anyash ask the right things at the right time, like “Have you had lunch?”"
-      />
-      <Field as="fieldset" label="Who do they live with?" optional error={errors.living_situation}>
-        <div role="radiogroup" aria-label="Who do they live with?" className="space-y-2">
-          {LIVING_SITUATIONS.map((opt) => (
-            <ChoiceCard
-              key={opt.id}
-              selected={form.living_situation === opt.id}
-              onClick={() => set("living_situation", form.living_situation === opt.id ? "" : opt.id)}
-              icon={LIVING_ICONS[opt.id]}
-              title={opt.label}
-              sub={LIVING_SUBS[opt.id]}
-            />
-          ))}
-        </div>
-      </Field>
-      <Field label="Help at home" htmlFor="ob-help" optional hint="Who cooks? Does anyone come to help?">
-        <TextAreaField
-          id="ob-help"
-          rows={2}
-          value={form.household_help}
-          placeholder="e.g. She cooks herself. A helper comes in the morning to clean."
-          onChange={(e) => set("household_help", e.target.value)}
-        />
-      </Field>
-      <Field as="fieldset" label="They usually wake up at" optional error={errors.wake_time}>
-        <TimeChoice
-          id="ob-wake"
-          label="They usually wake up at"
-          presets={[{ time: "05:00" }, { time: "06:00" }, { time: "07:00" }, { time: "08:00" }]}
-          value={form.wake_time || ""}
-          invalid={Boolean(errors.wake_time)}
-          onChange={(v) => set("wake_time", v)}
-        />
-      </Field>
-      <Field as="fieldset" label="They usually go to sleep at" optional error={errors.sleep_time}>
-        <TimeChoice
-          id="ob-sleep"
-          label="They usually go to sleep at"
-          presets={[{ time: "21:00" }, { time: "22:00" }, { time: "23:00" }]}
-          value={form.sleep_time || ""}
-          invalid={Boolean(errors.sleep_time)}
-          onChange={(v) => set("sleep_time", v)}
-        />
-      </Field>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* 5. Health                                                           */
-/* ------------------------------------------------------------------ */
-
-export function HealthStep({ form, set, headingRef }: StepProps) {
-  return (
-    <div className="space-y-8">
-      <StepHeading
-        headingRef={headingRef}
-        title="Any health conditions?"
-        intro="So Anyash can gently ask how they're doing, like “Did you take your BP tablet today?”"
-      />
-      <Field as="fieldset" label="Conditions" optional hint="Tap all that apply.">
-        <MultiChips
-          label="Conditions"
-          options={COMMON_CONDITIONS}
-          value={form.conditions || []}
-          onChange={(v) => set("conditions", v)}
-          addPlaceholder="Add another, e.g. Back pain"
-        />
-      </Field>
-      <Field as="fieldset" label="Daily medicines" optional hint="Name, dose and when they take it, if you know.">
-        <LineList
-          items={form.medicines || []}
-          onChange={(v) => set("medicines", v)}
-          placeholder="e.g. Amlodipine 5 mg, after breakfast"
-          addLabel="Add another medicine"
-          itemLabel="Medicine"
-        />
-      </Field>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* 6. Good to know                                                     */
-/* ------------------------------------------------------------------ */
-
-export function NotesStep({ form, set, headingRef }: StepProps) {
-  return (
-    <div className="space-y-8">
-      <StepHeading
-        headingRef={headingRef}
-        title="A few things to know"
-        intro={`This makes the calls feel personal, like talking to someone who knows ${whoOf(form)}.`}
-      />
-      <Field label="What do they enjoy talking about?" htmlFor="ob-enjoys" optional>
-        <TextAreaField
-          id="ob-enjoys"
-          rows={2}
-          value={form.enjoys}
-          placeholder="e.g. Old Hindi songs, her garden, cricket, the grandchildren"
-          onChange={(e) => set("enjoys", e.target.value)}
-        />
-      </Field>
-      <Field label="Anything Anyash should not bring up?" htmlFor="ob-avoid" optional>
-        <TextAreaField
-          id="ob-avoid"
-          rows={2}
-          value={form.avoid_topics}
-          placeholder="e.g. A recent loss in the family, money matters"
-          onChange={(e) => set("avoid_topics", e.target.value)}
-        />
-      </Field>
-      <div className="rounded-3xl bg-ob-soft p-4 ring-1 ring-ob-line">
-        <Field
-          label="What worries you most about them?"
-          htmlFor="ob-worry"
-          optional
-          hint={
-            <span className="inline-flex items-start gap-1.5">
-              <Lock className="w-3.5 h-3.5 mt-[3px] shrink-0" aria-hidden />
-              Private. Anyash never says this to them. It helps us know what to look out for.
-            </span>
-          }
-        >
-          <TextAreaField
-            id="ob-worry"
-            rows={2}
-            value={form.child_worry}
-            placeholder="e.g. She skips meals when she's alone"
-            onChange={(e) => set("child_worry", e.target.value)}
+    case "wake":
+      return {
+        art: (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/onboard/sun.webp" alt="" width={320} height={320} className="w-full h-full object-contain p-3" />
+        ),
+        title: `When does ${w.name} usually wake up?`,
+        body: (
+          <TimeChoice
+            label="Wakes up at"
+            presets={[{ time: "05:00" }, { time: "06:00" }, { time: "07:00" }, { time: "08:00" }]}
+            value={form.wake_time || ""}
+            onPick={(v) => (v ? pick({ wake_time: v }) : set("wake_time", ""))}
           />
-        </Field>
+        ),
+      };
+
+    case "sleep":
+      return {
+        art: art("moon"),
+        title: `And when does ${w.she} go to sleep?`,
+        body: (
+          <TimeChoice
+            label="Goes to sleep at"
+            presets={[{ time: "21:00" }, { time: "22:00" }, { time: "23:00" }, { time: "23:30" }]}
+            value={form.sleep_time || ""}
+            onPick={(v) => (v ? pick({ sleep_time: v }) : set("sleep_time", ""))}
+          />
+        ),
+      };
+
+    case "conditions":
+      return {
+        art: art("health"),
+        title: `Does ${w.name} have any health conditions?`,
+        subtitle: `Tap all that apply. Anyash will gently ask how ${w.shes} doing.`,
+        body: (
+          <MultiChips
+            label="Health conditions"
+            options={COMMON_CONDITIONS}
+            value={form.conditions || []}
+            onChange={(v) => set("conditions", v)}
+            addPlaceholder="Add another, e.g. Back pain"
+          />
+        ),
+      };
+
+    case "medicines":
+      return {
+        art: art("pills"),
+        title: `Any medicines ${w.she} ${w.she === "they" ? "take" : "takes"} every day?`,
+        subtitle: "Name, dose and when, if you know. A rough idea is fine.",
+        body: (
+          <LineList
+            items={form.medicines || []}
+            onChange={(v) => set("medicines", v)}
+            placeholder="e.g. Amlodipine 5 mg, after breakfast"
+            addLabel="Add another medicine"
+            itemLabel="Medicine"
+          />
+        ),
+      };
+
+    case "enjoys":
+      return {
+        art: art("chat"),
+        title: `What does ${w.name} love talking about?`,
+        subtitle: "Tap a few, or write your own. It makes the calls feel personal.",
+        body: <EnjoysPicker value={form.enjoys || ""} onChange={(v) => set("enjoys", v)} w={w} />,
+      };
+
+    case "avoid":
+      return {
+        art: art("quiet"),
+        title: "Anything Anyash should not bring up?",
+        subtitle: "A sensitive topic, a recent loss, anything that upsets them.",
+        body: (
+          <>
+            <label htmlFor="ob-avoid" className="sr-only">Topics to avoid</label>
+            <TextAreaField
+              id="ob-avoid"
+              rows={3}
+              value={form.avoid_topics}
+              placeholder="e.g. A recent loss in the family, money matters"
+              onChange={(e) => set("avoid_topics", e.target.value)}
+            />
+          </>
+        ),
+      };
+
+    case "worry":
+      return {
+        art: art("lock"),
+        title: `Is there anything you're worried about?`,
+        subtitle: (
+          <span className="inline-flex flex-wrap items-center gap-x-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-ob-mint px-2.5 py-0.5 text-[13px] font-semibold text-ob-brand">Private</span>
+            Anyash will never say this to {w.her}. It helps us know what to look out for.
+          </span>
+        ),
+        body: (
+          <>
+            <label htmlFor="ob-worry" className="sr-only">Your worry</label>
+            <TextAreaField
+              id="ob-worry"
+              rows={3}
+              value={form.child_worry}
+              placeholder={`e.g. ${cap(w.she)} skips lunch when ${w.shes} alone`}
+              onChange={(e) => set("child_worry", e.target.value)}
+            />
+          </>
+        ),
+      };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Pickers used above                                                  */
+/* ------------------------------------------------------------------ */
+
+function HonorificPicker({
+  options,
+  value,
+  set,
+  pick,
+  error,
+}: {
+  options: string[];
+  value: string;
+  set: StepProps["set"];
+  pick: StepProps["pick"];
+  error?: string;
+}) {
+  const isCustom = value !== "" && !options.includes(value);
+  const [custom, setCustom] = React.useState(isCustom);
+  const showCustom = custom || isCustom;
+  return (
+    <>
+      <div role="radiogroup" aria-label="What do you call them?" className="flex flex-wrap gap-2.5">
+        {options.map((h) => (
+          <Chip
+            key={h}
+            selected={!showCustom && value === h}
+            onClick={() => {
+              setCustom(false);
+              pick({ honorific: h });
+            }}
+          >
+            {h}
+          </Chip>
+        ))}
+        <Chip
+          selected={showCustom}
+          onClick={() => {
+            setCustom(true);
+            if (!isCustom) set("honorific", "");
+          }}
+        >
+          Something else
+        </Chip>
       </div>
-    </div>
+      {showCustom && (
+        <div className="mt-3 animate-ob-in motion-reduce:animate-none">
+          <label htmlFor="ob-honorific" className="sr-only">What do you call them?</label>
+          <TextField
+            id="ob-honorific"
+            value={value}
+            placeholder="e.g. Mausi, Bauji, Ammi Jaan"
+            autoComplete="off"
+            autoCapitalize="words"
+            enterKeyHint="next"
+            autoFocus={!isCustom}
+            invalid={Boolean(error)}
+            onChange={(e) => set("honorific", e.target.value)}
+          />
+        </div>
+      )}
+      <FieldError>{error}</FieldError>
+    </>
+  );
+}
+
+const ENJOY_TOPICS = ["Family", "Grandchildren", "Cooking", "Old songs", "Cricket", "Gardening", "Prayer & bhajans", "TV shows", "News", "Old friends"];
+
+function EnjoysPicker({ value, onChange, w }: { value: string; onChange: (v: string) => void; w: Words }) {
+  const parts = value.split(",").map((s) => s.trim()).filter(Boolean);
+  const has = (t: string) => parts.some((p) => p.toLowerCase() === t.toLowerCase());
+  const toggle = (t: string) => onChange((has(t) ? parts.filter((p) => p.toLowerCase() !== t.toLowerCase()) : [...parts, t]).join(", "));
+  return (
+    <>
+      <div role="group" aria-label="Topics" className="flex flex-wrap gap-2">
+        {ENJOY_TOPICS.map((t) => (
+          <Chip key={t} role="checkbox" selected={has(t)} onClick={() => toggle(t)}>
+            {t}
+          </Chip>
+        ))}
+      </div>
+      <label htmlFor="ob-enjoys" className="mt-4 block text-[14px] font-semibold text-ob-body">
+        Anything else?
+      </label>
+      <TextAreaField
+        id="ob-enjoys"
+        rows={2}
+        value={value}
+        placeholder={`e.g. ${cap(w.hers)} garden, Kishore Kumar songs`}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-2"
+      />
+    </>
   );
 }
 
@@ -424,109 +559,30 @@ export function NotesStep({ form, set, headingRef }: StepProps) {
 /* Review                                                              */
 /* ------------------------------------------------------------------ */
 
-const living = (v?: string) => LIVING_SITUATIONS.find((l) => l.id === v)?.label || "";
-const list = (v?: string[]) => (v || []).map((x) => x.trim()).filter(Boolean).join(", ");
 const phoneLabel = (p: string) => {
   const d = p.replace(/^\+91/, "");
   return p.startsWith("+91") && d.length === 10 ? `+91 ${d.slice(0, 5)} ${d.slice(5)}` : p;
 };
 
-function reviewRows(id: StepId, form: OnboardingInput): [string, string][] {
-  switch (id) {
-    case "you":
-      return [
-        ["Your name", form.child_name],
-        ["You are their", form.relationship || ""],
-      ];
-    case "parent":
-      return [
-        ["Name", form.parent_name],
-        ["Anyash calls them", form.honorific],
-      ];
-    case "reach":
-      return [
-        ["Phone", phoneLabel(form.phone_number)],
-        ["Best time to call", form.preferred_call_time ? clock12(form.preferred_call_time) : ""],
-        ["Language", form.language],
-      ];
-    case "day":
-      return [
-        ["Lives", living(form.living_situation)],
-        ["Help at home", form.household_help || ""],
-        ["Wakes up", form.wake_time ? clock12(form.wake_time) : ""],
-        ["Goes to sleep", form.sleep_time ? clock12(form.sleep_time) : ""],
-      ];
-    case "health":
-      return [
-        ["Conditions", list(form.conditions)],
-        ["Medicines", list(form.medicines)],
-      ];
-    case "notes":
-      return [
-        ["Enjoys", form.enjoys || ""],
-        ["Avoid", form.avoid_topics || ""],
-        ["Your worry (private)", form.child_worry || ""],
-      ];
-  }
-}
+const LIVING_LABEL = (v: string, w: Words) => (v === "alone" ? "Alone" : v === "with_spouse" ? `With ${w.spouse}` : v === "with_family" ? "With family" : "");
+const list = (v?: string[]) => (v || []).map((x) => x.trim()).filter(Boolean).join(", ");
 
-export function ReviewStep({
-  form,
-  errors,
-  headingRef,
-  onEdit,
-}: {
-  form: OnboardingInput;
-  errors: OnboardingErrors;
-  headingRef: React.Ref<HTMLHeadingElement>;
-  onEdit: (stepIndex: number) => void;
-}) {
-  return (
-    <div className="space-y-6">
-      <StepHeading headingRef={headingRef} title="Check everything" intro="Tap Edit to change anything. Then save." />
-      <div className="space-y-3">
-        {STEPS.map((step, i) => {
-          const rows = reviewRows(step.id, form);
-          const filled = rows.filter(([, v]) => v.trim());
-          const hasError = step.fields.some((f) => errors[f]);
-          return (
-            <section
-              key={step.id}
-              aria-label={step.name}
-              className={`rounded-3xl bg-ob-card p-4 ring-1 shadow-[0_1px_2px_rgba(28,26,23,0.04)] ${hasError ? "ring-2 ring-ob-bad/60" : "ring-ob-line"}`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-ob-muted">{step.name}</h2>
-                <button
-                  type="button"
-                  onClick={() => onEdit(i)}
-                  className="h-9 -my-1.5 -mr-2 px-3 rounded-full text-[14px] font-medium text-ob-ink hover:bg-ob-soft"
-                  aria-label={`Edit ${step.name}`}
-                >
-                  Edit
-                </button>
-              </div>
-              {filled.length ? (
-                <dl className="mt-2 space-y-2">
-                  {filled.map(([k, v]) => (
-                    <div key={k} className="grid grid-cols-[minmax(0,40%)_1fr] gap-3 text-[15px] leading-6">
-                      <dt className="text-ob-muted">{k}</dt>
-                      <dd className="text-ob-ink break-words min-w-0">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : (
-                <p className="mt-2 text-[15px] text-ob-faint">Skipped</p>
-              )}
-              {hasError && (
-                <p className="mt-2 text-[13.5px] leading-5 text-ob-bad">
-                  {step.fields.map((f) => errors[f]).filter(Boolean)[0]}
-                </p>
-              )}
-            </section>
-          );
-        })}
-      </div>
-    </div>
-  );
+export function reviewRows(form: OnboardingInput, w: Words): { step: StepKey; label: string; value: string }[] {
+  return [
+    { step: "child_name", label: "Your name", value: form.child_name },
+    { step: "role", label: "Adding", value: w.short },
+    { step: "parent_name", label: "Name", value: form.parent_name },
+    { step: "honorific", label: `You call ${w.her}`, value: form.honorific },
+    { step: "phone", label: "Phone", value: phoneLabel(form.phone_number) },
+    { step: "language", label: "Language", value: form.language },
+    { step: "call_time", label: "Best time", value: form.preferred_call_time ? clock12(form.preferred_call_time) : "" },
+    { step: "living", label: "Lives", value: LIVING_LABEL(form.living_situation || "", w) },
+    { step: "wake", label: "Wakes up", value: form.wake_time ? clock12(form.wake_time) : "" },
+    { step: "sleep", label: "Sleeps", value: form.sleep_time ? clock12(form.sleep_time) : "" },
+    { step: "conditions", label: "Health", value: list(form.conditions) },
+    { step: "medicines", label: "Medicines", value: list(form.medicines) },
+    { step: "enjoys", label: "Loves", value: form.enjoys || "" },
+    { step: "avoid", label: "Avoid", value: form.avoid_topics || "" },
+    { step: "worry", label: "Your worry", value: form.child_worry || "" },
+  ];
 }

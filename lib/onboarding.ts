@@ -10,6 +10,20 @@ import { normalizeClock, parseClock, formatClock } from "./callTime";
 
 export type LivingSituation = "alone" | "with_spouse" | "with_family";
 
+/** Which parent the form is about. The child picks one; each form adds one parent. */
+export type ParentRole = "mother" | "father";
+
+export const PARENT_ROLES: { id: ParentRole; label: string }[] = [
+  { id: "mother", label: "Mom" },
+  { id: "father", label: "Dad" },
+];
+
+/** What a child usually calls each parent, offered as one-tap choices. */
+export const HONORIFICS_BY_ROLE: Record<ParentRole, string[]> = {
+  mother: ["Mummy", "Mummy Ji", "Maa", "Amma", "Mom", "Aai", "Ammi"],
+  father: ["Papa", "Papa Ji", "Pitaji", "Appa", "Dad", "Baba", "Abbu"],
+};
+
 export const LIVING_SITUATIONS: { id: LivingSituation; label: string }[] = [
   { id: "alone", label: "Alone" },
   { id: "with_spouse", label: "With their husband or wife" },
@@ -38,6 +52,8 @@ export interface OnboardingInput {
   language: string;
   phone_number: string;
   child_name: string;
+  /** Mother or father. Older profiles and the dashboard may leave it empty. */
+  parent_role?: ParentRole | "";
   relationship?: string;
   living_situation?: LivingSituation | "";
   household_help?: string;
@@ -110,6 +126,7 @@ export function validateOnboarding(raw: Partial<OnboardingInput> | null | undefi
     language: clean(r.language),
     phone_number: String(r.phone_number || "").replace(/[^\d+]/g, ""),
     child_name: clean(r.child_name),
+    parent_role: (clean(r.parent_role) as ParentRole | ""),
     relationship: clean(r.relationship),
     living_situation: (clean(r.living_situation) as LivingSituation | ""),
     household_help: clean(r.household_help),
@@ -160,6 +177,8 @@ export function onboardingErrors(raw: Partial<OnboardingInput> | null | undefine
     errors.phone_number = "An Indian number has 10 digits after +91. Please check it, e.g. 98765 43210.";
   }
   if (!clean(r.child_name)) errors.child_name = "Please add your name.";
+  const role = clean(r.parent_role);
+  if (role && !PARENT_ROLES.some((p) => p.id === role)) errors.parent_role = "Please choose Mom or Dad.";
   const living = clean(r.living_situation);
   if (living && !LIVING_SITUATIONS.some((l) => l.id === living)) errors.living_situation = "Please choose who they live with.";
   for (const field of ["wake_time", "sleep_time", "preferred_call_time"] as const) {
@@ -228,9 +247,10 @@ export function buildStartingContext(input: OnboardingInput): string {
   const medicines = cleanList(input.medicines).join(", ");
   const child = clean(input.child_name) || "the family";
 
+  const role = input.parent_role === "mother" ? "mother" : input.parent_role === "father" ? "father" : "";
   const lines = [
     line("PERSON", [
-      `${clean(input.honorific)} (${clean(input.parent_name)})`,
+      `${clean(input.honorific)} (${clean(input.parent_name)})${role && clean(input.child_name) ? `, ${clean(input.child_name)}'s ${role}` : ""}`,
       living ? `lives ${living}` : "",
       help ? `help at home: ${help}` : "",
     ]),
@@ -284,6 +304,7 @@ export function buildProfileRow(
     else delete facts[key];
   };
   setFact("relationship", clean(input.relationship));
+  setFact("parent_role", clean(input.parent_role));
   setFact("living_situation", clean(input.living_situation));
   setFact("household_help", clean(input.household_help));
   setFact("enjoys", clean(input.enjoys));
@@ -361,6 +382,7 @@ export function readOnboarding(parent: any): OnboardingInput {
     language: parent?.language || factValue<string>(facts.language) || "Hindi",
     phone_number: parent?.phone_number || "",
     child_name: parent?.child_name || factValue<string>(facts.family_member) || "",
+    parent_role: (factValue<string>(facts.parent_role) as ParentRole) || "",
     relationship: factValue<string>(facts.relationship) || "",
     living_situation: (factValue<string>(facts.living_situation) as LivingSituation) || "",
     household_help: factValue<string>(facts.household_help) || "",

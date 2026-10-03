@@ -47,6 +47,8 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (body && typeof body === "object") delete body.other_routines;
   const valid = validateOnboarding(body);
   if (!valid.ok) return NextResponse.json({ error: valid.error }, { status: 400 });
+  // The public form always says which parent this is.
+  if (!valid.input.parent_role) return NextResponse.json({ error: "Please choose Mom or Dad." }, { status: 400 });
 
   const tokenId = await claimToken(token);
   if (!tokenId) {

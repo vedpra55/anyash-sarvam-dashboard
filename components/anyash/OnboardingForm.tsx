@@ -3,7 +3,7 @@
 import React from "react";
 import { X, Plus } from "lucide-react";
 import { LANGUAGES, RELATIONSHIPS } from "@/lib/languages";
-import { HONORIFICS, LIVING_SITUATIONS, QUESTIONS, OnboardingInput } from "@/lib/onboarding";
+import { HONORIFICS, LIVING_SITUATIONS, PARENT_ROLES, ParentRole, QUESTIONS, OnboardingInput } from "@/lib/onboarding";
 import { FieldLabel, TextInput, SelectInput, TextArea } from "./primitives";
 
 export const EMPTY_ONBOARDING: OnboardingInput = {
@@ -106,6 +106,14 @@ export function OnboardingForm({
           <FieldLabel label={QUESTIONS.parent_name} htmlFor={id("name")}>
             <TextInput id={id("name")} value={value.parent_name} autoComplete="off" placeholder="Sunita Sharma"
               onChange={(e) => set("parent_name", e.target.value)} />
+          </FieldLabel>
+          <FieldLabel label="Mom or Dad" htmlFor={id("role")}>
+            <SelectInput id={id("role")} value={value.parent_role || ""} onChange={(e) => set("parent_role", e.target.value as ParentRole | "")}>
+              <option value="">Not set</option>
+              {PARENT_ROLES.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
+            </SelectInput>
           </FieldLabel>
           <FieldLabel label={QUESTIONS.honorific} htmlFor={id("honorific")}>
             <TextInput id={id("honorific")} value={value.honorific} list={id("honorifics")} placeholder="Mummy Ji"
