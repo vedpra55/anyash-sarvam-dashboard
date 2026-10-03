@@ -8,6 +8,7 @@ import { CallDetailDrawer, AudioPlayer } from "./CallDetailDrawer";
 import { MemoryPanel } from "./MemoryPanel";
 import { ProgressiveMemory } from "./ProgressiveMemory";
 import { TrendStrip } from "./TrendStrip";
+import { SummaryTab, ReportTab } from "./story/StoryTabs";
 import { Button, TabBar, EmptyState } from "./primitives";
 import {
   Section,
@@ -28,7 +29,7 @@ import { SarvamCallRecord } from "@/lib/sarvam";
 import { useMarkDone, prefetchCall, memoryQuery } from "@/lib/queries";
 import { useQueryClient } from "@tanstack/react-query";
 
-export type DetailSubTab = "overview" | "calls" | "memory" | "profile";
+export type DetailSubTab = "summary" | "report" | "overview" | "calls" | "memory" | "profile";
 
 interface ParentDetailCanvasProps {
   parent: ParentItem | null;
@@ -207,12 +208,17 @@ export function ParentDetailCanvas({
           value={activeTab}
           onChange={setActiveTab}
           tabs={[
+            { id: "summary", label: "Summary" },
+            { id: "report", label: "Report" },
             { id: "overview", label: "Overview" },
             { id: "calls", label: "Calls", count: calls.length || undefined },
             { id: "memory", label: "Memory" },
             { id: "profile", label: "Profile" },
           ]}
         />
+
+        {activeTab === "summary" && <SummaryTab parentId={parent.id} parentName={parent.parent_name} />}
+        {activeTab === "report" && <ReportTab parentId={parent.id} parentName={parent.parent_name} />}
 
         {activeTab === "overview" && (
           <div className="pt-8">

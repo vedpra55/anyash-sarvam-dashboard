@@ -35,6 +35,7 @@ export const keys = {
   transcript: (attemptId: string, interactionId?: string) =>
     ["call", attemptId, "transcript", interactionId || ""] as const,
   memory: (parentId: string) => ["parent", parentId, "memory"] as const,
+  story: (parentId: string) => ["parent", parentId, "story"] as const,
   settings: ["settings"] as const,
   insights: ["insights"] as const,
 };
@@ -125,6 +126,19 @@ export function useCallDetails(attemptId?: string) {
 
 export function useTranscript(attemptId?: string, interactionId?: string) {
   return useQuery({ ...transcriptQuery(attemptId || "", interactionId), enabled: Boolean(attemptId || interactionId) });
+}
+
+/** One parent's full story (every Sarvam call + Supabase detail) for Summary and Report. */
+export function storyQuery(parentId: string) {
+  return {
+    queryKey: keys.story(parentId),
+    queryFn: () => fetchJson<any>(`/api/parents/${parentId}/story`),
+    refetchInterval: 60_000,
+  };
+}
+
+export function useStory(parentId: string) {
+  return useQuery(storyQuery(parentId));
 }
 
 export function useMemory(parentId: string) {

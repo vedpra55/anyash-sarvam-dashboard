@@ -92,6 +92,28 @@ and the detail are separate screens).
   - *Overview*: verdict and reason, what Anya will ask, next step; latest
     check-in with audio; **last 7 days** strip (`TrendStrip.tsx`: check-in,
     sleep, pain, mood, appetite, medicines).
+  - *Summary* (`components/anyash/story/StoryTabs.tsx`): the parent's story
+    since they joined, built for daily behind-the-scenes videos. Status and
+    date context ("Day 33 with Anyash"), days talked, minutes, the diya
+    streak (flame grows at 3 and 7 days, best streak as a ghost), the latest
+    call with the parent's own words, a calendar of every day (gold = talked,
+    brighter = longer; ring = no answer; markers for the first call and life
+    moments), minutes per day, 14-day health strips (Food, Sleep, Medicine,
+    Body, Mood; mood as faces, pain days per week as bars) and the threads
+    Anyash is following.
+  - *Report*: Day / Week / Month with ‹ › to move through time. Status, talk
+    dots, one row per health area, what we heard next to what you can do,
+    the parent's words and what Anyash will ask next. Day adds the call
+    timeline.
+  - *Present* (both tabs): one section per screen, enlarged for filming the
+    screen, icons animate and numbers count up; → / tap / Space to advance,
+    Esc to leave; the full name is hidden by default.
+  - Data: `/api/parents/[id]/story` returns every Sarvam call to the
+    parent's number since the trial start (Sarvam is the full record) plus
+    Supabase health logs, reviews, memory events and threads;
+    `lib/story.ts` rolls it into India days and reports (pure, tested in
+    `tests/story.test.ts`). Health areas come only from health logs and
+    Sarvam's `parent_mood`; anything not discussed is "not mentioned".
   - *Calls*: every call; opens the call drawer.
   - *Memory* (`MemoryPanel.tsx`): Anya's memory as sections, edit in place,
     history of how it changed per call.
@@ -222,6 +244,7 @@ TanStack Query 5.
 | `/api/parents` | GET | All `parent_profiles` + Sarvam calls (linked by phone) + last 14 `daily_health_logs` + recent AI reviews (`call_records` + `decision_cards`) each |
 | `/api/parents` | POST | Create a parent from the onboarding form (or update the one with the same phone). Writes the starting `current_user_context` |
 | `/api/parents/[id]/memory` | GET | Current memory plus how it changed on each call |
+| `/api/parents/[id]/story` | GET | Everything for the Summary and Report tabs: all Sarvam calls to the parent since the trial start, health logs, reviews, memory events, threads |
 | `/api/memory/[parentId]` | GET | Progressive memory: briefs with the context sent, profile facts (with history), threads, reflections, events |
 | `/api/evals/*` | various | Evals: `prompts`, `scenarios`, `runs` (create / list / detail), `step` (advance one scenario by 2 exchanges, grade when it ends), `chat` (manual turn), `grade`, `seed` |
 | `/api/decisions/[id]` | PATCH | Mark a decision card's follow-up done / not done |
