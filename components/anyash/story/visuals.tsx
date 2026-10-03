@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import type { Area, Day, Mark, Story } from "@/lib/story";
-import { shortDate, weekdayShort } from "@/lib/story";
+import { AREAS, daysBetween, isConversation, isReached, longDate, shortDate, weekdayShort } from "@/lib/story";
 import { AREA_ACCENT, AREA_LABEL, AreaIcon, SparkIcon, StarIcon } from "./icons";
 
 /* ------------------------------------------------------------------ */
@@ -110,14 +110,125 @@ function goldFor(minutes: number) {
   return `rgba(254, 229, 165, ${a})`;
 }
 
+const CALL_TIME = (iso: string) =>
+  new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
+
+const secs = (n: number) => (n >= 60 ? `${Math.floor(n / 60)}m ${String(n % 60).padStart(2, "0")}s` : `${n}s`);
+
+/**
+ * The story of one day, shown when a calendar tile is hovered, focused or
+ * tapped: what happened first, then the calls, what was said, and how each
+ * health area looked.
+ */
+function DayCard({ day, story }: { day: Day; story: Story }) {
+  const talkedCalls = day.calls.filter(isConversation);
+  const main = talkedCalls[talkedCalls.length - 1];
+  const quote = story.events.filter((e) => e.date === day.key && e.words.trim().length > 6).sort((a, b) => b.importance - a.importance)[0];
+  const dayNo = daysBetween(story.start, day.key) + 1;
+  const mood = day.marks.mood;
+  const tone =
+    day.state === "talked" ? "bg-[#FEE5A5]" : day.state === "missed" ? "ring-[1.5px] ring-inset ring-[rgba(254,229,165,.6)]" : "bg-zinc-600";
+  const headline =
+    day.state === "talked"
+      ? `Talked ${day.minutes >= 1 ? `${Math.round(day.minutes)} min` : "briefly"}${main?.language ? ` in ${main.language}` : ""}`
+      : day.state === "missed"
+        ? `Called ${day.calls.length === 1 ? "once" : `${day.calls.length} times`}, no answer`
+        : day.key === story.today
+          ? "No call yet today"
+          : "Not called";
+  return (
+    <div className="w-[300px] rounded-2xl bg-[#16171B] ring-1 ring-white/[0.09] shadow-[0_20px_50px_-12px_rgba(0,0,0,.8)] p-4 text-left">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[14px] font-semibold text-white">{longDate(day.key)}</p>
+        <p className="text-[11.5px] text-zinc-500 tabular-nums">Day {dayNo}</p>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${tone}`} />
+        <p className="text-[13px] text-zinc-200 flex-1 min-w-0 truncate">{headline}</p>
+        {day.state === "talked" && mood !== "n" && mood !== "x" && <MoodFace mark={mood} size={18} />}
+      </div>
+      {(day.key === story.firstCall || day.moment) && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {day.key === story.firstCall && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-zinc-300">
+              <StarIcon className="w-3 h-3" />
+              First call
+            </span>
+          )}
+          {day.moment && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-zinc-300">
+              <SparkIcon className="w-3 h-3" />
+              Shared a life moment
+            </span>
+          )}
+        </div>
+      )}
+
+      {day.calls.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {day.calls.map((c) => {
+            const reached = isReached(c);
+            return (
+              <li key={c.attempt_id} className="flex items-center gap-2 text-[12px] tabular-nums">
+                <span className={`w-1 h-1 rounded-full ${reached ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                <span className="text-zinc-400 w-[58px]">{CALL_TIME(c.at)}</span>
+                <span className={reached ? "text-zinc-200" : "text-zinc-500"}>{reached ? secs(c.seconds) : "No answer"}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {main?.summary && <p className="mt-3 text-[12.5px] leading-[1.55] text-zinc-300 line-clamp-3">{main.summary}</p>}
+
+      {quote && (
+        <p className="mt-3 border-l-2 border-[#FEE5A5]/50 pl-2.5 text-[12.5px] leading-[1.5] text-white line-clamp-2">“{quote.words}”</p>
+      )}
+
+      {day.state === "talked" && (
+        <div className="mt-3 pt-3 border-t border-white/[0.06] grid grid-cols-5 gap-1">
+          {AREAS.map((area) => {
+            const m = day.marks[area];
+            const known = m !== "n" && m !== "x";
+            return (
+              <div key={area} className="flex flex-col items-center gap-1" title={`${AREA_LABEL[area]}: ${MARK_LABEL[m]}${day.notes[area] ? ` · ${day.notes[area]}` : ""}`}>
+                <span className={known ? "text-zinc-200" : "text-zinc-700"}>
+                  <AreaIcon area={area} className="w-[18px] h-[18px]" mark={m} color={known ? AREA_ACCENT[area] : "#3F3F46"} />
+                </span>
+                <MarkDot mark={m === "x" ? "n" : m} size={7} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Card x-offset from its tile: centred on the tile but kept inside the 7-column grid (40px tiles, 6px gaps, 300px card). */
+function cardLeft(col: number) {
+  const step = 46;
+  const gridWidth = 7 * step - 6;
+  const tileLeft = col * step;
+  const wanted = tileLeft + 20 - 150;
+  return Math.max(0, Math.min(gridWidth - 300, wanted)) - tileLeft;
+}
+
 export function StoryCalendar({ story }: { story: Story }) {
+  const [active, setActive] = useState<string | null>(null);
   const days = story.days;
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setActive(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
   if (!days.length) return null;
   const lead = (new Date(`${days[0].key}T00:00:00Z`).getUTCDay() + 6) % 7; // Monday first
   const cells: (Day | null)[] = [...Array(lead).fill(null), ...days];
   return (
     <div>
-      <div className="inline-grid grid-cols-[repeat(7,36px)] sm:grid-cols-[repeat(7,40px)] gap-1.5">
+      <div className="inline-grid grid-cols-[repeat(7,36px)] sm:grid-cols-[repeat(7,40px)] gap-1.5" onMouseLeave={() => setActive(null)}>
         {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
           <div key={i} className="text-center text-[11px] font-medium text-zinc-600 pb-1">
             {d}
@@ -128,26 +239,46 @@ export function StoryCalendar({ story }: { story: Story }) {
           const isToday = d.key === story.today;
           const first = d.key === story.firstCall;
           const talked = d.state === "talked";
+          const open = active === d.key;
+          const col = i % 7;
+          const row = Math.floor(i / 7);
           const label = `${weekdayShort(d.key)} ${shortDate(d.key)}: ${
             talked ? `talked${d.minutes ? `, ${d.minutes} min` : ""}` : d.state === "missed" ? "called, no answer" : "not called"
           }${first ? " · first call" : ""}${d.moment ? " · shared a life moment" : ""}`;
           return (
-            <div
-              key={d.key}
-              title={label}
-              aria-label={label}
-              style={{ background: talked ? goldFor(d.minutes) : undefined } as React.CSSProperties}
-              className={`relative aspect-square rounded-[9px] flex items-center justify-center ${
-                talked ? "" : d.state === "missed" ? "ring-[1.5px] ring-inset ring-[rgba(254,229,165,.38)]" : "bg-white/[0.04]"
-              } ${isToday ? "outline outline-2 outline-offset-2 outline-zinc-200/80 ay-breathe" : ""}`}
-            >
-              <span className={`text-[12px] tabular-nums font-semibold ${talked ? "text-black/60" : d.state === "missed" ? "text-zinc-400" : "text-zinc-600"}`}>
-                {Number(d.key.slice(8))}
-              </span>
-              {(first || d.moment) && (
-                <span className="absolute -top-1.5 -right-1.5 w-[17px] h-[17px] rounded-full bg-ay-canvas ring-1 ring-white/10 flex items-center justify-center">
-                  {first ? <StarIcon className="w-[11px] h-[11px]" /> : <SparkIcon className="w-[11px] h-[11px]" />}
+            <div key={d.key} className="relative">
+              <button
+                type="button"
+                aria-label={label}
+                aria-expanded={open}
+                onMouseEnter={() => setActive(d.key)}
+                onFocus={() => setActive(d.key)}
+                onBlur={() => setActive((a) => (a === d.key ? null : a))}
+                onClick={() => setActive((a) => (a === d.key ? null : d.key))}
+                style={{ background: talked ? goldFor(d.minutes) : undefined } as React.CSSProperties}
+                className={`relative w-full aspect-square rounded-[9px] flex items-center justify-center transition-transform duration-150 ${
+                  talked ? "" : d.state === "missed" ? "ring-[1.5px] ring-inset ring-[rgba(254,229,165,.38)]" : "bg-white/[0.04]"
+                } ${isToday ? "outline outline-2 outline-offset-2 outline-zinc-200/80 ay-breathe" : ""} ${open ? "scale-110 z-10" : "hover:scale-105"}`}
+              >
+                <span className={`text-[12px] tabular-nums font-semibold ${talked ? "text-black/60" : d.state === "missed" ? "text-zinc-400" : "text-zinc-600"}`}>
+                  {Number(d.key.slice(8))}
                 </span>
+                {(first || d.moment) && (
+                  <span className="absolute -top-1.5 -right-1.5 w-[17px] h-[17px] rounded-full bg-ay-canvas ring-1 ring-white/10 flex items-center justify-center">
+                    {first ? <StarIcon className="w-[11px] h-[11px]" /> : <SparkIcon className="w-[11px] h-[11px]" />}
+                  </span>
+                )}
+              </button>
+              {open && (
+                <div
+                  role="tooltip"
+                  className={`absolute z-40 pointer-events-none ${row <= 1 ? "top-full mt-2.5" : "bottom-full mb-2.5"}`}
+                  style={{ left: cardLeft(col) }}
+                >
+                  <div className="animate-[ay-card_.14s_ease-out]">
+                    <DayCard day={d} story={story} />
+                  </div>
+                </div>
               )}
             </div>
           );
