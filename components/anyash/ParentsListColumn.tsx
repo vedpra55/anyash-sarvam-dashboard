@@ -37,9 +37,8 @@ interface ParentsListColumnProps {
   selectedParentId: string | null;
   onSelectParent: (parent: ParentItem) => void;
   onAddParentClick: () => void;
-  /** Copies a single-use onboarding link for a child to fill. */
-  onCopyLinkClick?: () => void;
-  isLinking?: boolean;
+  /** Opens the invite panel: single-use links friends fill for their own parent. */
+  onInviteClick?: () => void;
   className?: string;
 }
 
@@ -48,8 +47,7 @@ export function ParentsListColumn({
   selectedParentId,
   onSelectParent,
   onAddParentClick,
-  onCopyLinkClick,
-  isLinking = false,
+  onInviteClick,
   className = "",
 }: ParentsListColumnProps) {
   const [query, setQuery] = useState("");
@@ -81,16 +79,15 @@ export function ParentsListColumn({
             Add
           </Button>
         </div>
-        {onCopyLinkClick && (
+        {onInviteClick && (
           <button
             type="button"
-            onClick={onCopyLinkClick}
-            disabled={isLinking}
-            title="Copy a single-use link the child can fill on their phone"
-            className="mt-2 -ml-1 inline-flex items-center gap-1.5 px-1 py-1 rounded text-[12.5px] text-zinc-500 hover:text-white disabled:opacity-50 disabled:pointer-events-none transition-colors"
+            onClick={onInviteClick}
+            title="Make a link a friend can fill for their own parent"
+            className="mt-2 -ml-1 inline-flex items-center gap-1.5 px-1 py-1 rounded text-[12.5px] text-zinc-500 hover:text-white transition-colors"
           >
             <Link2 className="w-3.5 h-3.5" />
-            {isLinking ? "Creating link…" : "Copy onboarding link"}
+            Invite a friend
           </button>
         )}
         {parents.length > 5 && (

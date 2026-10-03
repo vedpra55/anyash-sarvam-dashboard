@@ -31,6 +31,21 @@ module.exports = {
           "accent-hover": "#FDE8B0",
           "accent-ink": "#E9D39A",
         },
+        // Public onboarding page (light, warm). Used only under /onboard.
+        ob: {
+          bg: "#FAF7F2",
+          card: "#FFFFFF",
+          ink: "#1C1A17",
+          body: "#4A453E",
+          muted: "#7A7368",
+          faint: "#A8A094",
+          line: "#ECE6DB",
+          soft: "#F3EEE5",
+          accent: "#FEE5A5",
+          gold: "#B8862B",
+          good: "#2F7D5B",
+          bad: "#B4412F",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -96,6 +111,19 @@ module.exports = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "ob-in": {
+          from: { opacity: "0", transform: "translateY(10px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "ob-pop": {
+          "0%": { opacity: "0", transform: "scale(0.6)" },
+          "60%": { opacity: "1", transform: "scale(1.06)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        "ob-draw": {
+          from: { strokeDashoffset: "48" },
+          to: { strokeDashoffset: "0" },
+        },
         pulseWave: {
           "0%, 100%": { transform: "scale(1)", opacity: "0.8" },
           "50%": { transform: "scale(1.18)", opacity: "0.3" },
@@ -104,6 +132,9 @@ module.exports = {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "ob-in": "ob-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both",
+        "ob-pop": "ob-pop 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both",
+        "ob-draw": "ob-draw 0.45s 0.3s ease-out both",
         "pulse-wave": "pulseWave 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
       },
     },

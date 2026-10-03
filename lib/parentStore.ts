@@ -4,6 +4,7 @@
  */
 import { createHash, randomBytes } from "crypto";
 import { getServiceSupabase } from "./supabase";
+import { linkStatus, OnboardingLink } from "./onboardingLinks";
 import {
   buildProfileRow,
   buildStartingContext,
@@ -62,7 +63,7 @@ export async function saveOnboardingProfile(input: OnboardingInput, mode: SaveMo
     existing = await findByPhone(input.phone_number);
     if (existing && mode.kind === "public") {
       throw new ProfileSaveError(
-        "This phone number is already registered with Anyash. Please ask the Anyash team to update the details.",
+        "This phone number is already set up with Anyash. If something needs changing, let the person who sent you this link know.",
         409,
       );
     }
@@ -131,30 +132,40 @@ export const hashToken = (token: string) => createHash("sha256").update(token).d
 /** Looks like a token we issued (base64url, 32 bytes). */
 export const isWellFormedToken = (token: string) => /^[A-Za-z0-9_-]{43}$/.test(token);
 
-export async function createOnboardingToken(): Promise<{ token: string; expiresAt: string }> {
+export async function createOnboardingToken({
+  label = null,
+  days = 14,
+}: { label?: string | null; days?: number } = {}): Promise<{ id: string; token: string; expiresAt: string }> {
   const token = randomBytes(32).toString("base64url");
   const { data, error } = await getServiceSupabase()
     .from("onboarding_tokens")
-    .insert({ token_hash: hashToken(token) })
-    .select("expires_at")
+    .insert({
+      token_hash: hashToken(token),
+      label,
+      expires_at: new Date(Date.now() + days * 86_400_000).toISOString(),
+    })
+    .select("id, expires_at")
     .single();
   if (error) throw new ProfileSaveError(error.message, 500);
-  return { token, expiresAt: data.expires_at };
+  return { id: data.id, token, expiresAt: data.expires_at };
 }
 
-export type TokenState = "valid" | "used" | "expired" | "unknown";
+export type TokenState = "valid" | "used" | "expired" | "revoked" | "unknown";
 
-export async function getTokenState(token: string): Promise<TokenState> {
-  if (!isWellFormedToken(token)) return "unknown";
+/** Whether the link can still be used, and the friend's name to greet them by. */
+export async function getTokenState(token: string): Promise<{ state: TokenState; label: string | null }> {
+  if (!isWellFormedToken(token)) return { state: "unknown", label: null };
   const { data } = await getServiceSupabase()
     .from("onboarding_tokens")
-    .select("used_at, expires_at")
+    .select("used_at, expires_at, revoked_at, label")
     .eq("token_hash", hashToken(token))
     .maybeSingle();
-  if (!data) return "unknown";
-  if (data.used_at) return "used";
-  if (new Date(data.expires_at).getTime() < Date.now()) return "expired";
-  return "valid";
+  if (!data) return { state: "unknown", label: null };
+  const label = data.label || null;
+  if (data.used_at) return { state: "used", label };
+  if (data.revoked_at) return { state: "revoked", label };
+  if (new Date(data.expires_at).getTime() < Date.now()) return { state: "expired", label };
+  return { state: "valid", label };
 }
 
 /** Marks the token used; only one caller can win. Returns the token row id. */
@@ -165,6 +176,7 @@ export async function claimToken(token: string): Promise<string | null> {
     .update({ used_at: new Date().toISOString() })
     .eq("token_hash", hashToken(token))
     .is("used_at", null)
+    .is("revoked_at", null)
     .gt("expires_at", new Date().toISOString())
     .select("id")
     .maybeSingle();
@@ -178,4 +190,34 @@ export async function finishToken(tokenId: string, parentId: string) {
 /** Gives the link back when saving failed, so the child can fix and resend. */
 export async function releaseToken(tokenId: string) {
   await getServiceSupabase().from("onboarding_tokens").update({ used_at: null }).eq("id", tokenId);
+}
+
+/** The most recent invite links, newest first, with the parent each one added. */
+export async function listOnboardingLinks(limit = 50): Promise<OnboardingLink[]> {
+  const { data, error } = await getServiceSupabase()
+    .from("onboarding_tokens")
+    .select("id, label, created_at, expires_at, used_at, revoked_at, parent_id, parent:parent_profiles(parent_name)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new ProfileSaveError(error.message, 500);
+  const now = new Date();
+  return (data || []).map(({ parent, ...row }: any) => {
+    const p = Array.isArray(parent) ? parent[0] : parent;
+    const link = { ...row, parent_name: p?.parent_name || null };
+    return { ...link, status: linkStatus(link, now) };
+  });
+}
+
+/** Turns off a link that hasn't been filled. Returns false when there was nothing to turn off. */
+export async function revokeOnboardingLink(id: string): Promise<boolean> {
+  const { data, error } = await getServiceSupabase()
+    .from("onboarding_tokens")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("used_at", null)
+    .is("revoked_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw new ProfileSaveError(error.message, 500);
+  return Boolean(data);
 }
