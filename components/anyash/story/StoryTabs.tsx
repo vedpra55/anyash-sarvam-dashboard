@@ -21,7 +21,7 @@ import {
 } from "@/lib/story";
 import { Button, EmptyState, Segmented } from "../primitives";
 import { StatusLabel, formatDuration } from "../detail-ui";
-import { CallIcon, Diya, MissedCallIcon, PinIcon, WordsIcon } from "./icons";
+import { CalendarCheckIcon, CallIcon, ChatIcon, Diya, MissedCallIcon, PinIcon, WeekIcon, WordsIcon } from "./icons";
 import { AreaRow, ConversationPulse, CountUp, MarkLegend, MoodFace, Strip, StoryCalendar, TalkDots, TrendBars } from "./visuals";
 
 /* ------------------------------------------------------------------ */
@@ -48,6 +48,39 @@ function Heading({ children, aside }: { children: React.ReactNode; aside?: React
     <div className="flex items-baseline justify-between gap-4 mb-4">
       <h3 className="text-[13px] font-medium text-zinc-500">{children}</h3>
       {aside}
+    </div>
+  );
+}
+
+/** One figure: a small labelled icon, the number with its unit, and one quiet line. */
+function Stat({
+  icon,
+  label,
+  value,
+  unit,
+  meta,
+  live,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  unit: string;
+  meta: React.ReactNode;
+  live: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-zinc-400 whitespace-nowrap">
+        <span className="text-[#FEE5A5] flex items-center">{icon}</span>
+        {label}
+      </p>
+      <p className="mt-2.5 flex items-baseline gap-1.5 whitespace-nowrap">
+        <span className="text-[34px] sm:text-[38px] font-semibold text-white tabular-nums leading-none tracking-tight">
+          <CountUp value={value} live={live} />
+        </span>
+        <span className="text-[14px] text-zinc-500">{unit}</span>
+      </p>
+      <p className="mt-2 text-[12.5px] text-zinc-500 truncate">{meta}</p>
     </div>
   );
 }
@@ -140,40 +173,61 @@ function summarySections(story: Story, { live, name }: BuildOpts): StorySection[
       id: "numbers",
       name: "In numbers",
       node: (
-        <section className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-7">
-          <div>
-            <p className="text-[34px] sm:text-[40px] font-semibold text-white tabular-nums leading-none">
-              <CountUp value={story.daysTalked} live={live} />
-              <span className="text-[18px] text-zinc-500 font-normal"> / {story.dayNumber}</span>
-            </p>
-            <p className="mt-2 text-[13px] text-zinc-500">days talked</p>
-          </div>
-          <div>
-            <p className="text-[34px] sm:text-[40px] font-semibold text-white tabular-nums leading-none">
-              <CountUp value={story.minutes} live={live} />
-            </p>
-            <p className="mt-2 text-[13px] text-zinc-500">minutes of chat{perDay ? ` · about ${perDay} a day` : ""}</p>
-          </div>
-          <div>
-            <div className="flex items-end gap-2">
-              <Diya days={story.streak} className="w-10 h-10 -mb-1 -ml-1" live={live} />
-              <p className="text-[34px] sm:text-[40px] font-semibold text-white tabular-nums leading-none">
-                <CountUp value={story.streak} live={live} />
-              </p>
-              {story.bestStreak > story.streak && <Diya days={story.bestStreak} ghost className="w-7 h-7 -mb-0.5" />}
-            </div>
-            <p className="mt-2 text-[13px] text-zinc-500">
-              {story.streak ? `day streak` : "Light it again today"}
-              {story.bestStreak > story.streak ? ` · best ${story.bestStreak}` : story.streak > 1 ? ` · ${w.hers} best yet` : ""}
-            </p>
-          </div>
-          <div>
-            <p className="text-[34px] sm:text-[40px] font-semibold text-white tabular-nums leading-none">
-              <CountUp value={weekTalked} live={live} />
-              <span className="text-[18px] text-zinc-500 font-normal"> / 7</span>
-            </p>
-            <p className="mt-2 text-[13px] text-zinc-500">days talked this week</p>
-          </div>
+        <section className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-8">
+          <Stat
+            icon={<CalendarCheckIcon className="w-4 h-4" />}
+            label="Days talked"
+            value={story.daysTalked}
+            unit={`of ${story.dayNumber}`}
+            meta={`Since ${shortDate(story.start)}`}
+            live={live}
+          />
+          <Stat
+            icon={<ChatIcon className="w-4 h-4" />}
+            label="Time talking"
+            value={story.minutes}
+            unit="min"
+            meta={perDay ? `About ${perDay} min a day` : "No conversation yet"}
+            live={live}
+          />
+          <Stat
+            icon={<Diya days={story.streak} className="w-[18px] h-[18px] -my-0.5" live={live} />}
+            label="Streak"
+            value={story.streak}
+            unit={story.streak === 1 ? "day" : "days"}
+            meta={
+              story.streak === 0
+                ? "Starts with the next chat"
+                : story.bestStreak > story.streak
+                  ? `Best ${story.bestStreak} days`
+                  : story.streak > 1
+                    ? "Longest so far"
+                    : "Keep it going"
+            }
+            live={live}
+          />
+          <Stat
+            icon={<WeekIcon className="w-4 h-4" />}
+            label="This week"
+            value={weekTalked}
+            unit="of 7 days"
+            meta={
+              <span className="ay-dots inline-flex gap-1 align-middle" aria-hidden>
+                {week.map((d, i) => (
+                  <span
+                    key={d.key}
+                    className="w-2 h-2 rounded-full"
+                    style={{
+                      ["--i" as string]: i,
+                      background: d.state === "talked" ? "#FEE5A5" : "transparent",
+                      boxShadow: d.state === "talked" ? undefined : `inset 0 0 0 1.25px ${d.state === "missed" ? "rgba(254,229,165,.45)" : "#3F3F46"}`,
+                    } as React.CSSProperties}
+                  />
+                ))}
+              </span>
+            }
+            live={live}
+          />
         </section>
       ),
     },
@@ -208,7 +262,7 @@ function summarySections(story: Story, { live, name }: BuildOpts): StorySection[
               {latestTalk && (
                 <div className="flex sm:flex-col items-center gap-2 sm:pt-1">
                   <MoodFace mark={today?.marks.mood && today.marks.mood !== "x" ? today.marks.mood : "g"} size={44} />
-                  <span className="text-[12.5px] text-zinc-400">{(latestTalk.mood || "").replace(/_/g, " ").replace("calm positive", "calm, positive") || "mood not noted"}</span>
+                  <span className="text-[12.5px] text-zinc-400">{MOOD_WORD[latestTalk.mood || ""] || "Mood not noted"}</span>
                 </div>
               )}
             </div>
@@ -223,10 +277,7 @@ function summarySections(story: Story, { live, name }: BuildOpts): StorySection[
       name: "Every day",
       node: (
         <section>
-          <Heading>
-            Every day since {shortDate(story.start)}
-            <span className="text-zinc-300 ml-2">· talked on {story.daysTalked} of {story.dayNumber}</span>
-          </Heading>
+          <Heading aside={<span className="text-[12px] text-zinc-600">{shortDate(story.start)} – today</span>}>Every day with Anyash</Heading>
           <StoryCalendar story={story} />
         </section>
       ),
@@ -308,6 +359,15 @@ function summarySections(story: Story, { live, name }: BuildOpts): StorySection[
   }
   return sections;
 }
+
+const MOOD_WORD: Record<string, string> = {
+  calm_positive: "Calm and positive",
+  neutral: "Neutral",
+  mixed: "Mixed",
+  low_or_flat: "A bit low",
+  anxious_or_worried: "Worried",
+  irritable: "Irritable",
+};
 
 const WORD: Record<Area, Record<string, string>> = {
   food: { g: "Eating well", o: "Eating a bit less", w: "Not eating well" },

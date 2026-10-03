@@ -200,3 +200,33 @@ export function Diya({ days, className = "w-8 h-8", live, ghost }: { days: numbe
     </Svg>
   );
 }
+
+/* Small caption icons for the numbers row (16px). */
+export function CalendarCheckIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="3" {...stroke} />
+      <path d="M8 3v4M16 3v4M3.5 10h17" {...stroke} />
+      <path d="M9 15l2 2 4-4" {...stroke} />
+    </Svg>
+  );
+}
+
+export function ChatIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3.5V16A2.5 2.5 0 0 1 4 13.5z" {...stroke} />
+      <path d="M8.5 10h.01M12 10h.01M15.5 10h.01" {...stroke} strokeWidth={2.4} />
+    </Svg>
+  );
+}
+
+export function WeekIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      {[4, 8, 12, 16, 20].map((x, i) => (
+        <rect key={x} x={x - 1.4} y={i % 2 ? 9 : 6} width="2.8" height={i % 2 ? 9 : 12} rx="1.4" fill="currentColor" opacity={i === 4 ? 0.35 : 1} />
+      ))}
+    </Svg>
+  );
+}

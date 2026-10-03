@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { Area, Day, Mark, Story } from "@/lib/story";
 import { shortDate, weekdayShort } from "@/lib/story";
-import { AREA_ACCENT, AREA_LABEL, AreaIcon, Diya, SparkIcon, StarIcon } from "./icons";
+import { AREA_ACCENT, AREA_LABEL, AreaIcon, SparkIcon, StarIcon } from "./icons";
 
 /* ------------------------------------------------------------------ */
 /* Status marks                                                        */
@@ -116,10 +116,10 @@ export function StoryCalendar({ story }: { story: Story }) {
   const lead = (new Date(`${days[0].key}T00:00:00Z`).getUTCDay() + 6) % 7; // Monday first
   const cells: (Day | null)[] = [...Array(lead).fill(null), ...days];
   return (
-    <div className="max-w-[480px]">
-      <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="text-center text-[11px] text-zinc-600 pb-0.5">
+    <div>
+      <div className="inline-grid grid-cols-[repeat(7,36px)] sm:grid-cols-[repeat(7,40px)] gap-1.5">
+        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+          <div key={i} className="text-center text-[11px] font-medium text-zinc-600 pb-1">
             {d}
           </div>
         ))}
@@ -127,48 +127,57 @@ export function StoryCalendar({ story }: { story: Story }) {
           if (!d) return <div key={`b${i}`} />;
           const isToday = d.key === story.today;
           const first = d.key === story.firstCall;
-          const bestStart = d.key === story.bestStreakStart && story.bestStreak >= 3;
+          const talked = d.state === "talked";
           const label = `${weekdayShort(d.key)} ${shortDate(d.key)}: ${
-            d.state === "talked" ? `talked${d.minutes ? `, ${d.minutes} min` : ""}` : d.state === "missed" ? "called, no answer" : "not called"
+            talked ? `talked${d.minutes ? `, ${d.minutes} min` : ""}` : d.state === "missed" ? "called, no answer" : "not called"
           }${first ? " · first call" : ""}${d.moment ? " · shared a life moment" : ""}`;
           return (
             <div
               key={d.key}
               title={label}
               aria-label={label}
-              style={{ ["--i" as string]: i, background: d.state === "talked" ? goldFor(d.minutes) : undefined } as React.CSSProperties}
-              className={`relative aspect-square rounded-[7px] ${
-                d.state === "talked" ? "" : d.state === "missed" ? "ring-[1.5px] ring-inset ring-[rgba(254,229,165,.4)]" : "bg-white/[0.035]"
-              } ${isToday ? "outline outline-2 outline-offset-2 outline-zinc-300 ay-breathe" : ""}`}
+              style={{ background: talked ? goldFor(d.minutes) : undefined } as React.CSSProperties}
+              className={`relative aspect-square rounded-[9px] flex items-center justify-center ${
+                talked ? "" : d.state === "missed" ? "ring-[1.5px] ring-inset ring-[rgba(254,229,165,.38)]" : "bg-white/[0.04]"
+              } ${isToday ? "outline outline-2 outline-offset-2 outline-zinc-200/80 ay-breathe" : ""}`}
             >
-              <span className={`absolute bottom-1 right-1.5 text-[10px] tabular-nums font-medium ${d.state === "talked" ? "text-black/55" : "text-zinc-600"}`}>
+              <span className={`text-[12px] tabular-nums font-semibold ${talked ? "text-black/60" : d.state === "missed" ? "text-zinc-400" : "text-zinc-600"}`}>
                 {Number(d.key.slice(8))}
               </span>
-              <span className="absolute top-1 left-1 flex gap-0.5">
-                {first && <StarIcon className="w-3 h-3" color={d.state === "talked" ? "#0B0C0E" : "#FEE5A5"} />}
-                {bestStart && <Diya days={9} className="w-3.5 h-3.5" />}
-                {d.moment && <SparkIcon className="w-3 h-3" color={d.state === "talked" ? "#0B0C0E" : "#FEE5A5"} />}
-              </span>
+              {(first || d.moment) && (
+                <span className="absolute -top-1.5 -right-1.5 w-[17px] h-[17px] rounded-full bg-ay-canvas ring-1 ring-white/10 flex items-center justify-center">
+                  {first ? <StarIcon className="w-[11px] h-[11px]" /> : <SparkIcon className="w-[11px] h-[11px]" />}
+                </span>
+              )}
             </div>
           );
         })}
       </div>
-      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-zinc-500">
+      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-zinc-500">
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-[3px]" style={{ background: goldFor(1) }} />
-          <span className="w-3 h-3 rounded-[3px] -ml-1" style={{ background: goldFor(4) }} />
-          Talked (brighter = longer)
+          <span className="flex gap-0.5">
+            {[1, 2, 3, 4].map((m) => (
+              <span key={m} className="w-2.5 h-2.5 rounded-[3px]" style={{ background: goldFor(m) }} />
+            ))}
+          </span>
+          Talked, brighter is longer
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-[3px] ring-[1.5px] ring-inset ring-[rgba(254,229,165,.4)]" />
-          Called, no answer
+          <span className="w-2.5 h-2.5 rounded-[3px] ring-[1.25px] ring-inset ring-[rgba(254,229,165,.45)]" />
+          No answer
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-[3px] bg-white/[0.06]" />
+          <span className="w-2.5 h-2.5 rounded-[3px] bg-white/[0.07]" />
           Not called
         </span>
-        <span className="inline-flex items-center gap-1.5"><StarIcon className="w-3 h-3" />First call</span>
-        <span className="inline-flex items-center gap-1.5"><SparkIcon className="w-3 h-3" />Life moment</span>
+        <span className="inline-flex items-center gap-1.5">
+          <StarIcon className="w-3 h-3" />
+          First call
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <SparkIcon className="w-3 h-3" />
+          Life moment
+        </span>
       </div>
     </div>
   );
