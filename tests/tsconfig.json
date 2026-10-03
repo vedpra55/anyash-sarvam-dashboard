@@ -19,6 +19,7 @@
     "../lib/callTime.ts",
     "../lib/memory.ts",
     "../lib/onboarding.ts",
-    "../lib/onboardingLinks.ts"
+    "../lib/onboardingLinks.ts",
+    "../lib/story.ts"
   ]
 }
