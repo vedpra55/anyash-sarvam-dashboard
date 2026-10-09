@@ -5,6 +5,7 @@ import { Minus, Plus, ChevronRight, Phone } from "lucide-react";
 import { ParentItem } from "./ParentsListColumn";
 import { SupportedLanguage } from "@/lib/types";
 import { LANGUAGES, formatPhone } from "@/lib/languages";
+import { dateForGap, daysBetween, istDate, lastCallDateOf } from "@/lib/callGap";
 import { Modal, Button, FieldLabel, TextInput, SelectInput, TextArea } from "./primitives";
 
 interface CallModalProps {
@@ -22,6 +23,9 @@ export function CallModal({ isOpen, parent, onClose, onDispatchCall, isCalling }
   const [language, setLanguage] = useState<SupportedLanguage>("Hindi");
   const [context, setContext] = useState("");
   const [showContext, setShowContext] = useState(false);
+  const [lastCallDate, setLastCallDate] = useState("");
+  const [gapDays, setGapDays] = useState<number | null>(null);
+  const [today, setToday] = useState("");
 
   useEffect(() => {
     if (!isOpen || !parent) return;
@@ -37,6 +41,11 @@ export function CallModal({ isOpen, parent, onClose, onDispatchCall, isCalling }
     setLanguage(((parent.language || parent.facts?.language) as SupportedLanguage) || "Hindi");
     setContext(parent.current_user_context || "");
     setShowContext(false);
+    const todayIst = istDate(Date.now());
+    const last = lastCallDateOf(parent.calls) || "";
+    setToday(todayIst);
+    setLastCallDate(last);
+    setGapDays(last ? daysBetween(last, todayIst) : null);
   }, [isOpen, parent]);
 
   if (!parent) return null;
@@ -48,6 +57,18 @@ export function CallModal({ isOpen, parent, onClose, onDispatchCall, isCalling }
     setContext((prev) =>
       prev && /CALL COUNT:\s*\d+/i.test(prev) ? prev.replace(/CALL COUNT:\s*\d+/i, `CALL COUNT: ${valid}`) : prev
     );
+  };
+
+  // The date and the days stay in step: changing one recalculates the other.
+  const updateLastCallDate = (value: string) => {
+    setLastCallDate(value);
+    setGapDays(value ? daysBetween(value, today) : null);
+  };
+
+  const updateGapDays = (n: number) => {
+    const valid = Math.max(0, n);
+    setGapDays(valid);
+    setLastCallDate(dateForGap(valid, today) || "");
   };
 
   const start = async () => {
@@ -65,6 +86,8 @@ export function CallModal({ isOpen, parent, onClose, onDispatchCall, isCalling }
       number_of_calls: callNumber,
       numberOfCalls: callNumber,
       user_context_override: context.trim(),
+      last_call_date: lastCallDate,
+      days_since_last_call: gapDays === null ? "" : String(gapDays),
     });
   };
 
@@ -147,6 +170,48 @@ export function CallModal({ isOpen, parent, onClose, onDispatchCall, isCalling }
         </div>
         <p className="text-[12px] text-zinc-600 -mt-3">
           {callNumber <= 1 ? "First call: Anya will introduce herself." : "Follow-up call: Anya will pick up from her memory."}
+        </p>
+
+        <div className="grid grid-cols-[1fr_auto] gap-4 items-end">
+          <FieldLabel label="Last call" htmlFor="call-last-date">
+            <TextInput
+              id="call-last-date"
+              type="date"
+              value={lastCallDate}
+              max={today}
+              onChange={(e) => updateLastCallDate(e.target.value)}
+              disabled={isCalling}
+              className="[color-scheme:dark]"
+            />
+          </FieldLabel>
+          <FieldLabel label="Days in between">
+            <div className="h-10 inline-flex items-center rounded-lg ring-1 ring-white/[0.08] bg-white/[0.04]">
+              <button
+                type="button"
+                aria-label="Fewer days since last call"
+                onClick={() => updateGapDays((gapDays ?? 0) - 1)}
+                disabled={gapDays === null || gapDays <= 0 || isCalling}
+                className="w-9 h-full flex items-center justify-center text-zinc-400 hover:text-white disabled:opacity-30"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <span className="w-8 text-center text-[14px] text-white tabular-nums">{gapDays ?? "–"}</span>
+              <button
+                type="button"
+                aria-label="More days since last call"
+                onClick={() => updateGapDays(gapDays === null ? 0 : gapDays + 1)}
+                disabled={isCalling}
+                className="w-9 h-full flex items-center justify-center text-zinc-400 hover:text-white"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </FieldLabel>
+        </div>
+        <p className="text-[12px] text-zinc-600 -mt-3">
+          {lastCallDate
+            ? "Days in between don't count the last call's day or today."
+            : "No earlier call found. Pick a date if there was one."}
         </p>
 
         <div>
