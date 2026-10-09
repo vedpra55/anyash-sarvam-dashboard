@@ -8,6 +8,8 @@ import { buildSarvamVariables, resolveCallCount } from "@/lib/prompts";
 import { getServiceSupabase, supabaseUrl } from "@/lib/supabase";
 import { getSavedAgentVersion } from "@/lib/settings";
 import { chooseUserContext, readBriefMode, recordBriefUse, requestBrief } from "@/lib/briefs";
+import { resolveCallGap } from "@/lib/callGap";
+import { fetchSarvamCalls } from "@/lib/sarvam";
 
 export const dynamic = "force-dynamic";
 // A live brief is written before the call is placed (up to ~25 s).
@@ -45,6 +47,8 @@ export async function POST(req: NextRequest) {
       numberOfCalls,
       user_context_override,
       initial_bot_message_override,
+      last_call_date,
+      days_since_last_call,
     } = body;
 
     if (!profile || !profile.parentPhone) {
@@ -230,6 +234,18 @@ export async function POST(req: NextRequest) {
         override,
       });
 
+      // v33: how long since the last call. Values from the call modal win; a
+      // caller that sends neither gets them from the parent's connected calls.
+      const typedGap = { last_call_date, days_since_last_call };
+      const needsCalls = !String(last_call_date ?? "").trim() && !String(days_since_last_call ?? "").trim();
+      const last10Digits = normalizedPhone.slice(-10);
+      const parentCalls = needsCalls
+        ? (await fetchSarvamCalls()).filter(
+            (c) => last10Digits && c.parent_phone.replace(/\D/g, "").slice(-10) === last10Digits,
+          )
+        : [];
+      const callGap = resolveCallGap(typedGap, parentCalls);
+
       // The agent's own prompt and intro open the call. A greeting is sent only
       // when a manual test passes initial_bot_message_override.
       const botMessageOverride =
@@ -250,6 +266,8 @@ export async function POST(req: NextRequest) {
             user_id: userId,
             user_context: effectiveUserContext,
             number_of_calls: callCountStr,
+            last_call_date: callGap.last_call_date,
+            days_since_last_call: callGap.days_since_last_call,
           },
           app_overrides: {
             initial_language_name: validLanguage,
@@ -337,6 +355,7 @@ export async function POST(req: NextRequest) {
         recipient: profile.parentPhone,
         language,
         number_of_calls: callCountStr,
+        ...callGap,
       });
     }
 

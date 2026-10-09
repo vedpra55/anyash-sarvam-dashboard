@@ -17,6 +17,7 @@
     "../lib/insights.ts",
     "../lib/trial.ts",
     "../lib/callTime.ts",
+    "../lib/callGap.ts",
     "../lib/memory.ts",
     "../lib/onboarding.ts",
     "../lib/onboardingLinks.ts",
