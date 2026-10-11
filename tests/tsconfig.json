@@ -21,6 +21,7 @@
     "../lib/memory.ts",
     "../lib/onboarding.ts",
     "../lib/onboardingLinks.ts",
-    "../lib/story.ts"
+    "../lib/story.ts",
+    "../lib/auth.ts"
   ]
 }

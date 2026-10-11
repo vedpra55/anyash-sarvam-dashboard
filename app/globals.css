@@ -193,3 +193,10 @@ body {
   .ay-steam, .ay-float, .ay-wiggle, .ay-pulse, .ay-spin-slow, .ay-ripple, .ay-flicker, .ay-glow, .ay-breathe,
   .ay-present .ay-slide > *, .ay-present .ay-dots > *, .ay-present .ay-bars > *, .ay-present .ay-line { animation: none !important; }
 }
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+

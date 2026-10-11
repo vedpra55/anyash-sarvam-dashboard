@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Sun, Users, Phone, Settings, BarChart3, FlaskConical } from "lucide-react";
+import { Sun, Users, Phone, Settings, BarChart3, FlaskConical, Lock } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AgentSettingsModal } from "./AgentSettingsModal";
@@ -25,10 +25,29 @@ function isActive(pathname: string | null, href: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [locking, setLocking] = useState(false);
   const queryClient = useQueryClient();
 
-  // Public pages (the child's onboarding link) get no dashboard and no data.
-  const isPublic = pathname?.startsWith("/onboard/") ?? false;
+  // Public pages (the child's onboarding link or login page) get no dashboard shell and no data.
+  const isPublic = Boolean(
+    pathname?.startsWith("/onboard/") ||
+    pathname === "/onboard" ||
+    pathname === "/login" ||
+    pathname?.startsWith("/login/")
+  );
+
+  const handleLock = async () => {
+    if (locking) return;
+    setLocking(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // ignore network errors on logout
+    } finally {
+      queryClient.clear();
+      window.location.href = "/login";
+    }
+  };
 
   // Load the data every page needs as soon as the app opens, so moving between
   // Today, Parents and Calls never waits on the network.
@@ -65,13 +84,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="mt-auto flex items-center gap-3 h-9 px-3 rounded-lg text-[13.5px] text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.03] transition-colors"
-        >
-          <Settings className="w-4 h-4 shrink-0" strokeWidth={1.75} />
-          Settings
-        </button>
+        <div className="mt-auto space-y-0.5 pt-4 border-t border-ay-line">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-[13.5px] text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.03] transition-colors"
+          >
+            <Settings className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+            Settings
+          </button>
+          <button
+            onClick={handleLock}
+            disabled={locking}
+            title="Lock session"
+            className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-[13.5px] text-zinc-500 hover:text-rose-300 hover:bg-rose-500/[0.06] transition-colors"
+          >
+            <Lock className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+            {locking ? "Locking..." : "Lock Console"}
+          </button>
+        </div>
       </aside>
 
       {/* Mobile top bar */}
@@ -90,13 +120,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {label}
           </Link>
         ))}
-        <button
-          onClick={() => setSettingsOpen(true)}
-          aria-label="Settings"
-          className="ml-auto w-8 h-8 inline-flex items-center justify-center text-zinc-500"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Settings"
+            className="w-8 h-8 inline-flex items-center justify-center text-zinc-500 hover:text-white"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleLock}
+            disabled={locking}
+            aria-label="Lock"
+            title="Lock session"
+            className="w-8 h-8 inline-flex items-center justify-center text-zinc-500 hover:text-rose-300"
+          >
+            <Lock className="w-4 h-4" />
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 min-w-0 min-h-0 flex">{children}</main>
